@@ -1,0 +1,113 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #1b1f2a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+#stage {
+  position: relative;
+  width: 400px;
+  height: 600px;
+  max-width: 100vw;
+  max-height: 100vh;
+  aspect-ratio: 400 / 600;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  overflow: hidden;
+  user-select: none;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(#70c5ce, #b3e8ef 70%, #ded895);
+}
+
+#hud {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+#score {
+  font-size: 48px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 2px 0 #00000055, 0 0 6px #00000055;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 20, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #fff;
+}
+
+#overlay.hidden {
+  display: none;
+}
+
+#overlay-inner {
+  padding: 24px;
+}
+
+#overlay-title {
+  font-size: 32px;
+  margin: 0 0 8px;
+  color: #ffd166;
+  text-shadow: 0 2px 0 #00000066;
+}
+
+#overlay-sub {
+  margin: 0 0 4px;
+  opacity: 0.85;
+  font-size: 14px;
+}
+
+#best-line {
+  margin: 0 0 20px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+#best {
+  font-weight: 700;
+  color: #ffd166;
+}
+
+#start-btn {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 12px 32px;
+  border: none;
+  border-radius: 999px;
+  background: #ffd166;
+  color: #3a2b00;
+  cursor: pointer;
+  box-shadow: 0 6px 0 #c99a2e;
+  transition: transform 0.05s ease;
+}
+
+#start-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #c99a2e;
+}
