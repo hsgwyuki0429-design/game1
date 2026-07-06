@@ -26,8 +26,20 @@
   const BASE_SPEED = 180;
 
   let state = 'ready';
-  let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer;
-  let particles, floaters, shakeTime, shakeMag, squash;
+  let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
+  let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail;
+
+  function initClouds() {
+    clouds = [];
+    for (let i = 0; i < 6; i++) {
+      clouds.push({
+        x: Math.random() * W,
+        y: 20 + Math.random() * (H - GROUND_H - 80),
+        r: 18 + Math.random() * 26,
+        speedFactor: 0.15 + Math.random() * 0.2,
+      });
+    }
+  }
 
   function reset() {
     bird = { x: 90, y: H / 2, r: 14, vy: 0, rot: 0 };
@@ -38,11 +50,17 @@
     spawnTimer = 0;
     groundOffset = 0;
     flashTimer = 0;
+    flashMaxTimer = 0.15;
+    flashColor = '255,255,255';
     particles = [];
     floaters = [];
+    trail = [];
     shakeTime = 0;
     shakeMag = 0;
     squash = 1;
+    punch = 0;
+    bgTime = 0;
+    initClouds();
     scoreEl.textContent = '0';
     newBestLine.classList.add('hidden');
   }
@@ -99,7 +117,7 @@
 
   // --- particles & floating text ---
   function spawnBurst(x, y, colors, count, opts = {}) {
-    const { speed = 220, life = 0.6, size = 3 } = opts;
+    const { speed = 220, life = 0.6, size = 3, starRatio = 0, gravity = 500 } = opts;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const v = speed * (0.4 + Math.random() * 0.6);
@@ -111,12 +129,35 @@
         maxLife: life,
         size: size * (0.6 + Math.random() * 0.8),
         color: colors[Math.floor(Math.random() * colors.length)],
+        shape: Math.random() < starRatio ? 'star' : 'circle',
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 8,
+        gravity,
       });
     }
   }
 
-  function spawnFloater(x, y, text, color) {
-    floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8 });
+  function spawnConfettiRain(colors, count) {
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * W,
+        y: -20 - Math.random() * 200,
+        vx: (Math.random() - 0.5) * 60,
+        vy: 140 + Math.random() * 120,
+        life: 1.8 + Math.random() * 0.8,
+        maxLife: 1.8,
+        size: 3 + Math.random() * 3,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        shape: Math.random() < 0.5 ? 'star' : 'circle',
+        rot: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 6,
+        gravity: 60,
+      });
+    }
+  }
+
+  function spawnFloater(x, y, text, color, scale = 1) {
+    floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8, scale });
   }
 
   function triggerShake(mag, duration) {
@@ -124,14 +165,36 @@
     shakeMag = mag;
   }
 
+  function triggerFlash(color, duration) {
+    flashTimer = duration;
+    flashMaxTimer = duration;
+    flashColor = color;
+  }
+
+  function triggerPunch(amount) {
+    punch = Math.max(punch, amount);
+  }
+
   function updateFX(dt) {
+    bgTime += dt;
+
+    for (const c of clouds) {
+      c.x -= speed * dt * c.speedFactor * (state === 'playing' ? 1 : 0.3);
+      if (c.x < -c.r * 2) {
+        c.x = W + c.r * 2;
+        c.y = 20 + Math.random() * (H - GROUND_H - 80);
+      }
+    }
+
     for (const p of particles) {
-      p.vy += 500 * dt;
+      p.vy += p.gravity * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.life -= dt;
+      p.rot += p.rotSpeed * dt;
     }
     particles = particles.filter(p => p.life > 0);
+    if (particles.length > 280) particles.splice(0, particles.length - 280);
 
     for (const f of floaters) {
       f.y -= 40 * dt;
@@ -141,6 +204,13 @@
 
     if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
     squash += (1 - squash) * Math.min(1, dt * 10);
+    punch += (0 - punch) * Math.min(1, dt * 9);
+
+    if (state === 'playing') {
+      trail.push({ x: bird.x, y: bird.y, life: 0.35, maxLife: 0.35 });
+    }
+    for (const t of trail) t.life -= dt;
+    trail = trail.filter(t => t.life > 0);
   }
 
   function currentGap() {
@@ -162,6 +232,7 @@
     if (state === 'playing') {
       bird.vy = FLAP_VELOCITY;
       squash = 1.4;
+      triggerPunch(0.015);
       playFlap();
       vibrate(8);
       spawnBurst(bird.x - bird.r, bird.y + 6, ['#fff8e1', '#ffe9b3'], 3, { speed: 90, life: 0.35, size: 2 });
@@ -179,8 +250,9 @@
 
   function endGame() {
     state = 'gameover';
-    flashTimer = 0.15;
+    triggerFlash('255,255,255', 0.15);
     triggerShake(8, 0.25);
+    triggerPunch(0.12);
     playHit();
     vibrate([30, 40, 30]);
     spawnBurst(bird.x, bird.y, ['#8d6e3a', '#c9b96a', '#ffd166'], 16, { speed: 260, life: 0.7, size: 3.5 });
@@ -198,9 +270,13 @@
 
     if (isNewBest && score > 0) {
       newBestLine.classList.remove('hidden');
+      const rainbow = ['#ffd166', '#ff6b6b', '#4caf50', '#66bb6a', '#4dd0e1', '#ba68c8', '#fff'];
       setTimeout(() => {
         playBest();
-        spawnBurst(W / 2, H * 0.35, ['#ffd166', '#ff6b6b', '#4caf50', '#66bb6a', '#fff'], 30, { speed: 260, life: 1, size: 4 });
+        triggerFlash('255,209,102', 0.35);
+        triggerPunch(0.2);
+        spawnBurst(W / 2, H * 0.35, rainbow, 34, { speed: 280, life: 1, size: 4.5, starRatio: 0.4 });
+        spawnConfettiRain(rainbow, 50);
       }, 200);
     } else {
       newBestLine.classList.add('hidden');
@@ -233,12 +309,14 @@
         const milestone = score % 5 === 0;
         playScore(milestone);
         vibrate(milestone ? [15, 30, 15] : 15);
-        spawnFloater(bird.x, bird.y - 20, '+1', milestone ? '#ff6b6b' : '#ffd166');
+        triggerPunch(milestone ? 0.07 : 0.03);
+        if (milestone) triggerFlash('255,209,102', 0.16);
+        spawnFloater(bird.x, bird.y - 20, milestone ? `+1 コンボ x${score / 5}` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
         spawnBurst(
           bird.x, bird.y,
           milestone ? ['#ffd166', '#ff6b6b', '#4caf50', '#fff'] : ['#ffd166', '#fff8e1'],
-          milestone ? 22 : 10,
-          { speed: milestone ? 260 : 180, life: milestone ? 0.8 : 0.5, size: milestone ? 4 : 3 }
+          milestone ? 26 : 10,
+          { speed: milestone ? 280 : 180, life: milestone ? 0.9 : 0.5, size: milestone ? 4.5 : 3, starRatio: milestone ? 0.45 : 0 }
         );
         scoreEl.classList.remove('pop', 'pop-big');
         void scoreEl.offsetWidth;
@@ -272,13 +350,39 @@
   }
 
   function drawBackground() {
-    ctx.fillStyle = '#70c5ce';
-    ctx.fillRect(0, 0, W, H);
+    const hue = 190 + Math.sin(bgTime * 0.12) * 18;
+    const topColor = `hsl(${hue}, 62%, 68%)`;
+    const botColor = `hsl(${hue + 20}, 70%, 84%)`;
     const grd = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
-    grd.addColorStop(0, '#70c5ce');
-    grd.addColorStop(1, '#b3e8ef');
+    grd.addColorStop(0, topColor);
+    grd.addColorStop(1, botColor);
     ctx.fillStyle = grd;
     ctx.fillRect(0, 0, W, H - GROUND_H);
+
+    for (const c of clouds) {
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, c.r, c.r * 0.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(c.x + c.r * 0.6, c.y + c.r * 0.1, c.r * 0.7, c.r * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawStarPath(cx, cy, outerR, innerR) {
+    const spikes = 5;
+    let rot = -Math.PI / 2;
+    const step = Math.PI / spikes;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - outerR);
+    for (let i = 0; i < spikes; i++) {
+      ctx.lineTo(cx + Math.cos(rot) * outerR, cy + Math.sin(rot) * outerR);
+      rot += step;
+      ctx.lineTo(cx + Math.cos(rot) * innerR, cy + Math.sin(rot) * innerR);
+      rot += step;
+    }
+    ctx.closePath();
   }
 
   function drawPipes() {
@@ -317,18 +421,55 @@
       const a = Math.max(0, p.life / p.maxLife);
       ctx.globalAlpha = a;
       ctx.fillStyle = p.color;
+      if (p.shape === 'star') {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        drawStarPath(0, 0, p.size, p.size / 2.2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawTrail() {
+    for (const t of trail) {
+      const a = Math.max(0, t.life / t.maxLife) * 0.3;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#ffd166';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, bird.r * 0.7, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
 
+  function drawBirdGlow() {
+    const pulse = 0.5 + Math.sin(bgTime * 6) * 0.5;
+    const tier = Math.min(4, Math.floor(score / 5));
+    if (tier <= 0) return;
+    const radius = bird.r * (2.2 + tier * 0.5);
+    const grd = ctx.createRadialGradient(bird.x, bird.y, bird.r * 0.5, bird.x, bird.y, radius);
+    const alpha = (0.12 + tier * 0.05) * (0.7 + pulse * 0.3);
+    grd.addColorStop(0, `rgba(255, 209, 102, ${alpha})`);
+    grd.addColorStop(1, 'rgba(255, 209, 102, 0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(bird.x, bird.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawFloaters() {
     ctx.textAlign = 'center';
-    ctx.font = 'bold 22px sans-serif';
     for (const f of floaters) {
       const a = Math.max(0, f.life / f.maxLife);
+      const growth = 1 + (1 - a) * 0.15;
+      ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px sans-serif`;
       ctx.globalAlpha = a;
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
@@ -372,15 +513,22 @@
     if (shakeTime > 0) {
       ctx.translate((Math.random() * 2 - 1) * shakeMag, (Math.random() * 2 - 1) * shakeMag);
     }
+    if (punch > 0.001) {
+      ctx.translate(W / 2, H / 2);
+      ctx.scale(1 + punch, 1 + punch);
+      ctx.translate(-W / 2, -H / 2);
+    }
     drawBackground();
     drawPipes();
     drawGround();
     drawParticles();
+    drawTrail();
+    drawBirdGlow();
     drawBird();
     drawFloaters();
     ctx.restore();
     if (flashTimer > 0) {
-      ctx.fillStyle = `rgba(255,255,255,${flashTimer / 0.15 * 0.6})`;
+      ctx.fillStyle = `rgba(${flashColor},${(flashTimer / flashMaxTimer) * 0.55})`;
       ctx.fillRect(0, 0, W, H);
       flashTimer -= 1 / 60;
     }
