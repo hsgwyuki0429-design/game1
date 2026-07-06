@@ -45,10 +45,33 @@ canvas {
 }
 
 #score {
+  display: inline-block;
   font-size: 48px;
   font-weight: 800;
   color: #fff;
   text-shadow: 0 2px 0 #00000055, 0 0 6px #00000055;
+  transform-origin: center;
+}
+
+#score.pop {
+  animation: score-pop 0.35s ease;
+}
+
+#score.pop-big {
+  animation: score-pop-big 0.5s ease;
+}
+
+@keyframes score-pop {
+  0% { transform: scale(1); color: #fff; }
+  35% { transform: scale(1.45); color: #ffd166; }
+  100% { transform: scale(1); color: #fff; }
+}
+
+@keyframes score-pop-big {
+  0% { transform: scale(1) rotate(0deg); color: #fff; }
+  30% { transform: scale(1.8) rotate(-6deg); color: #ff6b6b; }
+  60% { transform: scale(1.4) rotate(4deg); color: #ffd166; }
+  100% { transform: scale(1) rotate(0deg); color: #fff; }
 }
 
 #overlay {
@@ -75,6 +98,24 @@ canvas {
   margin: 0 0 8px;
   color: #ffd166;
   text-shadow: 0 2px 0 #00000066;
+}
+
+#new-best-line {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffd166;
+  text-shadow: 0 0 12px rgba(255, 209, 102, 0.8);
+  animation: best-pulse 0.8s ease-in-out infinite;
+}
+
+#new-best-line.hidden {
+  display: none;
+}
+
+@keyframes best-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
 }
 
 #overlay-sub {

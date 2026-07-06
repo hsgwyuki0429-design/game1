@@ -7,6 +7,7 @@
   const overlaySub = document.getElementById('overlay-sub');
   const bestEl = document.getElementById('best');
   const startBtn = document.getElementById('start-btn');
+  const newBestLine = document.getElementById('new-best-line');
 
   const W = canvas.width;
   const H = canvas.height;
@@ -26,6 +27,7 @@
 
   let state = 'ready';
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer;
+  let particles, floaters, shakeTime, shakeMag, squash;
 
   function reset() {
     bird = { x: 90, y: H / 2, r: 14, vy: 0, rot: 0 };
@@ -36,7 +38,109 @@
     spawnTimer = 0;
     groundOffset = 0;
     flashTimer = 0;
+    particles = [];
+    floaters = [];
+    shakeTime = 0;
+    shakeMag = 0;
+    squash = 1;
     scoreEl.textContent = '0';
+    newBestLine.classList.add('hidden');
+  }
+
+  // --- audio (synthesized, no external assets) ---
+  let audioCtx = null;
+  function getAudioCtx() {
+    if (!audioCtx) {
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      audioCtx = AudioCtor ? new AudioCtor() : null;
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function beep({ freq = 440, duration = 0.1, type = 'sine', volume = 0.2, glideTo = null, delay = 0 }) {
+    const ctxA = getAudioCtx();
+    if (!ctxA) return;
+    const t0 = ctxA.currentTime + delay;
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + duration);
+    gain.gain.setValueAtTime(volume, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+    osc.connect(gain).connect(ctxA.destination);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.02);
+  }
+
+  function playFlap() {
+    beep({ freq: 480, glideTo: 720, duration: 0.08, type: 'square', volume: 0.1 });
+  }
+  function playScore(milestone) {
+    beep({ freq: 880, duration: 0.09, type: 'triangle', volume: 0.18 });
+    beep({ freq: 1175, duration: 0.12, type: 'triangle', volume: 0.16, delay: 0.06 });
+    if (milestone) {
+      beep({ freq: 1568, duration: 0.16, type: 'triangle', volume: 0.16, delay: 0.14 });
+    }
+  }
+  function playHit() {
+    beep({ freq: 160, glideTo: 55, duration: 0.28, type: 'sawtooth', volume: 0.2 });
+  }
+  function playBest() {
+    [660, 880, 1108, 1320].forEach((freq, i) => {
+      beep({ freq, duration: 0.16, type: 'triangle', volume: 0.16, delay: i * 0.09 });
+    });
+  }
+
+  function vibrate(pattern) {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  }
+
+  // --- particles & floating text ---
+  function spawnBurst(x, y, colors, count, opts = {}) {
+    const { speed = 220, life = 0.6, size = 3 } = opts;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const v = speed * (0.4 + Math.random() * 0.6);
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * v,
+        vy: Math.sin(angle) * v - 60,
+        life,
+        maxLife: life,
+        size: size * (0.6 + Math.random() * 0.8),
+        color: colors[Math.floor(Math.random() * colors.length)],
+      });
+    }
+  }
+
+  function spawnFloater(x, y, text, color) {
+    floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8 });
+  }
+
+  function triggerShake(mag, duration) {
+    shakeTime = duration;
+    shakeMag = mag;
+  }
+
+  function updateFX(dt) {
+    for (const p of particles) {
+      p.vy += 500 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+    }
+    particles = particles.filter(p => p.life > 0);
+
+    for (const f of floaters) {
+      f.y -= 40 * dt;
+      f.life -= dt;
+    }
+    floaters = floaters.filter(f => f.life > 0);
+
+    if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
+    squash += (1 - squash) * Math.min(1, dt * 10);
   }
 
   function currentGap() {
@@ -57,6 +161,10 @@
     }
     if (state === 'playing') {
       bird.vy = FLAP_VELOCITY;
+      squash = 1.4;
+      playFlap();
+      vibrate(8);
+      spawnBurst(bird.x - bird.r, bird.y + 6, ['#fff8e1', '#ffe9b3'], 3, { speed: 90, life: 0.35, size: 2 });
     } else if (state === 'gameover') {
       startGame();
     }
@@ -72,7 +180,13 @@
   function endGame() {
     state = 'gameover';
     flashTimer = 0.15;
-    if (score > best) {
+    triggerShake(8, 0.25);
+    playHit();
+    vibrate([30, 40, 30]);
+    spawnBurst(bird.x, bird.y, ['#8d6e3a', '#c9b96a', '#ffd166'], 16, { speed: 260, life: 0.7, size: 3.5 });
+
+    const isNewBest = score > best;
+    if (isNewBest) {
       best = score;
       localStorage.setItem(STORAGE_KEY, String(best));
     }
@@ -81,6 +195,16 @@
     overlaySub.textContent = `スコア: ${score}`;
     startBtn.textContent = 'もう一度';
     overlay.classList.remove('hidden');
+
+    if (isNewBest && score > 0) {
+      newBestLine.classList.remove('hidden');
+      setTimeout(() => {
+        playBest();
+        spawnBurst(W / 2, H * 0.35, ['#ffd166', '#ff6b6b', '#4caf50', '#66bb6a', '#fff'], 30, { speed: 260, life: 1, size: 4 });
+      }, 200);
+    } else {
+      newBestLine.classList.add('hidden');
+    }
   }
 
   function update(dt) {
@@ -106,6 +230,19 @@
         p.passed = true;
         score++;
         scoreEl.textContent = String(score);
+        const milestone = score % 5 === 0;
+        playScore(milestone);
+        vibrate(milestone ? [15, 30, 15] : 15);
+        spawnFloater(bird.x, bird.y - 20, '+1', milestone ? '#ff6b6b' : '#ffd166');
+        spawnBurst(
+          bird.x, bird.y,
+          milestone ? ['#ffd166', '#ff6b6b', '#4caf50', '#fff'] : ['#ffd166', '#fff8e1'],
+          milestone ? 22 : 10,
+          { speed: milestone ? 260 : 180, life: milestone ? 0.8 : 0.5, size: milestone ? 4 : 3 }
+        );
+        scoreEl.classList.remove('pop', 'pop-big');
+        void scoreEl.offsetWidth;
+        scoreEl.classList.add(milestone ? 'pop-big' : 'pop');
       }
     }
     pipes = pipes.filter(p => p.x > -PIPE_WIDTH);
@@ -175,10 +312,36 @@
     ctx.fillRect(0, groundY, W, 4);
   }
 
+  function drawParticles() {
+    for (const p of particles) {
+      const a = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFloaters() {
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 22px sans-serif';
+    for (const f of floaters) {
+      const a = Math.max(0, f.life / f.maxLife);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = 'left';
+  }
+
   function drawBird() {
     ctx.save();
     ctx.translate(bird.x, bird.y);
     ctx.rotate(bird.rot);
+    ctx.scale(1 / Math.sqrt(squash), Math.sqrt(squash));
     ctx.fillStyle = '#ffd166';
     ctx.beginPath();
     ctx.arc(0, 0, bird.r, 0, Math.PI * 2);
@@ -205,10 +368,17 @@
   }
 
   function draw() {
+    ctx.save();
+    if (shakeTime > 0) {
+      ctx.translate((Math.random() * 2 - 1) * shakeMag, (Math.random() * 2 - 1) * shakeMag);
+    }
     drawBackground();
     drawPipes();
     drawGround();
+    drawParticles();
     drawBird();
+    drawFloaters();
+    ctx.restore();
     if (flashTimer > 0) {
       ctx.fillStyle = `rgba(255,255,255,${flashTimer / 0.15 * 0.6})`;
       ctx.fillRect(0, 0, W, H);
@@ -221,6 +391,7 @@
     const dt = Math.min(0.033, (now - last) / 1000);
     last = now;
     update(dt);
+    updateFX(dt);
     draw();
     requestAnimationFrame(loop);
   }
