@@ -8,6 +8,7 @@
   const bestEl = document.getElementById('best');
   const startBtn = document.getElementById('start-btn');
   const newBestLine = document.getElementById('new-best-line');
+  const stage = document.getElementById('stage');
 
   const W = canvas.width;
   const H = canvas.height;
@@ -27,7 +28,7 @@
 
   let state = 'ready';
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
-  let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail;
+  let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
 
   function initClouds() {
     clouds = [];
@@ -55,6 +56,7 @@
     particles = [];
     floaters = [];
     trail = [];
+    shockwaves = [];
     shakeTime = 0;
     shakeMag = 0;
     squash = 1;
@@ -175,6 +177,16 @@
     punch = Math.max(punch, amount);
   }
 
+  function triggerInvertPulse(cls) {
+    stage.classList.remove('fx-invert', 'fx-invert-big', 'fx-invert-hit');
+    void stage.offsetWidth;
+    stage.classList.add(cls);
+  }
+
+  function spawnShockwave(x, y, color, maxR, life) {
+    shockwaves.push({ x, y, color, maxR, life, maxLife: life });
+  }
+
   function updateFX(dt) {
     bgTime += dt;
 
@@ -211,6 +223,9 @@
     }
     for (const t of trail) t.life -= dt;
     trail = trail.filter(t => t.life > 0);
+
+    for (const s of shockwaves) s.life -= dt;
+    shockwaves = shockwaves.filter(s => s.life > 0);
   }
 
   function currentGap() {
@@ -253,9 +268,11 @@
     triggerFlash('255,255,255', 0.15);
     triggerShake(8, 0.25);
     triggerPunch(0.12);
+    triggerInvertPulse('fx-invert-hit');
     playHit();
     vibrate([30, 40, 30]);
     spawnBurst(bird.x, bird.y, ['#8d6e3a', '#c9b96a', '#ffd166'], 16, { speed: 260, life: 0.7, size: 3.5 });
+    spawnShockwave(bird.x, bird.y, '#ff6b6b', 110, 0.4);
 
     const isNewBest = score > best;
     if (isNewBest) {
@@ -275,8 +292,12 @@
         playBest();
         triggerFlash('255,209,102', 0.35);
         triggerPunch(0.2);
+        triggerInvertPulse('fx-invert-big');
         spawnBurst(W / 2, H * 0.35, rainbow, 34, { speed: 280, life: 1, size: 4.5, starRatio: 0.4 });
         spawnConfettiRain(rainbow, 50);
+        spawnShockwave(W / 2, H * 0.35, '#ffd166', 260, 0.8);
+        setTimeout(() => spawnShockwave(W / 2, H * 0.35, '#4dd0e1', 260, 0.8), 150);
+        setTimeout(() => spawnShockwave(W / 2, H * 0.35, '#ba68c8', 260, 0.8), 300);
       }, 200);
     } else {
       newBestLine.classList.add('hidden');
@@ -310,7 +331,11 @@
         playScore(milestone);
         vibrate(milestone ? [15, 30, 15] : 15);
         triggerPunch(milestone ? 0.07 : 0.03);
-        if (milestone) triggerFlash('255,209,102', 0.16);
+        if (milestone) {
+          triggerFlash('255,209,102', 0.16);
+          triggerInvertPulse('fx-invert');
+          spawnShockwave(bird.x, bird.y, '#ffd166', 130, 0.5);
+        }
         spawnFloater(bird.x, bird.y - 20, milestone ? `+1 コンボ x${score / 5}` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
         spawnBurst(
           bird.x, bird.y,
@@ -350,9 +375,13 @@
   }
 
   function drawBackground() {
-    const hue = 190 + Math.sin(bgTime * 0.12) * 18;
-    const topColor = `hsl(${hue}, 62%, 68%)`;
-    const botColor = `hsl(${hue + 20}, 70%, 84%)`;
+    const tier = Math.min(6, Math.floor(score / 5));
+    const speedMul = 1 + tier * 0.7;
+    const ampMul = 1 + tier * 0.9;
+    const hue = 190 + Math.sin(bgTime * 0.12 * speedMul) * 18 * ampMul;
+    const sat = 62 + tier * 4;
+    const topColor = `hsl(${hue}, ${sat}%, 68%)`;
+    const botColor = `hsl(${hue + 20}, ${sat + 8}%, 84%)`;
     const grd = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
     grd.addColorStop(0, topColor);
     grd.addColorStop(1, botColor);
@@ -414,6 +443,21 @@
     }
     ctx.fillStyle = '#8d6e3a';
     ctx.fillRect(0, groundY, W, 4);
+  }
+
+  function drawShockwaves() {
+    for (const s of shockwaves) {
+      const t = 1 - s.life / s.maxLife;
+      const r = s.maxR * t;
+      const a = Math.max(0, 1 - t);
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 4 * (1 - t) + 1;
+      ctx.globalAlpha = a * 0.8;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawParticles() {
@@ -521,6 +565,7 @@
     drawBackground();
     drawPipes();
     drawGround();
+    drawShockwaves();
     drawParticles();
     drawTrail();
     drawBirdGlow();
