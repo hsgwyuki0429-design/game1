@@ -9,7 +9,9 @@
 <body>
   <div id="app">
     <div id="view">
+      <canvas id="gl"></canvas>
       <canvas id="sky"></canvas>
+      <button id="b-fs" title="全画面で見る">⛶</button>
       <div id="hud">
         <div id="hud-time">08:00</div>
         <div id="hud-stage">快晴</div>
@@ -61,6 +63,10 @@
       </div>
 
       <div class="ctl">
+        <label class="chk"><input type="checkbox" id="c-guides"> 高度ガイドを表示</label>
+      </div>
+
+      <div class="ctl">
         <label>プリセット</label>
         <div id="presets">
           <button data-p="calm">おだやかな晴れ</button>
@@ -88,6 +94,7 @@
       </details>
     </div>
   </div>
+  <script src="render.js"></script>
   <script src="sim.js"></script>
 </body>
 </html>
