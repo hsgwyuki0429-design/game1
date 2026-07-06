@@ -1,4 +1,6 @@
-/* 入道雲シミュレータ — 対流の簡易気象物理 + WebGLボリューム雲レンダリング */
+/* 入道雲シミュレータ
+   気象物理: GPU流体エンジン(fluid.js) + 診断用のパーセル法
+   描画: WebGLボリュームレイマーチング(render.js) + 2Dオーバーレイ */
 (() => {
   "use strict";
 
@@ -8,34 +10,54 @@
   const profCanvas = document.getElementById("profile");
   const profCtx = profCanvas.getContext("2d");
 
-  let glOK = false;
+  let glOK = false, fluidOK = false;
   try { glOK = window.CloudGL.init(glCanvas); } catch (e) { console.error(e); }
   if (!glOK) {
     document.getElementById("hud-stage").textContent = "WebGL2が使えないため表示できません";
+  } else {
+    try { fluidOK = window.CloudFluid.init(window.CloudGL.context()); } catch (e) { console.error(e); }
   }
 
   // ---------- 定数 ----------
   const DRY_LAPSE = 9.8;   // 乾燥断熱減率 [°C/km]
   const TROPOPAUSE = 12;   // 圏界面 [km]
   const MAX_ALT = 14;      // 表示する高さ [km]
-  const DAY_START = 6, DAY_END = 19; // 日の出・日の入り [時]
+  const DAY_START = 6, DAY_END = 19;
 
   const GROUND_FACTOR = { sea: 0.35, grass: 1.0, forest: 0.7, city: 1.35 };
   const GROUND_ID = { sea: 0, grass: 1, forest: 2, city: 3 };
 
-  // カメラ (render.js のシェーダと同じ値)
-  const RO = [0, 0.55, -19];
-  const PITCH = 0.22;
   const TANV = 0.62;
-  const FWD = [0, Math.sin(PITCH), Math.cos(PITCH)];
-  const UP = [0, Math.cos(PITCH), -Math.sin(PITCH)];
-  const WORLD_HALF = 6; // sim.cx(0..1) → 世界座標 ±6km
+  // 流体領域 [km]
+  const DOM = { x0: -12, x1: 12, y1: 16, z0: -8, z1: 8 };
 
   // ---------- 入力状態 ----------
   const env = {
     airTemp: 32, humidity: 65, lapse: 7.0, wind: 3,
     ground: "grass", minutesPerSec: 5,
   };
+
+  // ---------- カメラ (オービット) ----------
+  const cam = {
+    yaw: 0, el: -0.09, dist: 21,
+    target: [0, 2.6, 0],
+    ro: [0, 0, 0], fwd: [0, 0, 1], up: [0, 1, 0], right: [1, 0, 0],
+  };
+  function computeCam() {
+    cam.dist = clamp(cam.dist, 6, 45);
+    // 目線が地面(0.2km)より下がらない範囲で仰角をクランプ
+    const elMin = Math.asin(clamp((0.2 - cam.target[1]) / cam.dist, -1, 1));
+    cam.el = clamp(cam.el, elMin, 1.35);
+    const ce = Math.cos(cam.el), se = Math.sin(cam.el);
+    cam.ro = [
+      cam.target[0] + cam.dist * Math.sin(cam.yaw) * ce,
+      cam.target[1] + cam.dist * se,
+      cam.target[2] - cam.dist * Math.cos(cam.yaw) * ce,
+    ];
+    const f = norm3(sub3(cam.target, cam.ro));
+    const r = norm3(cross3(f, [0, 1, 0]));
+    cam.fwd = f; cam.right = r; cam.up = cross3(r, f);
+  }
 
   // ---------- シミュレーション状態 ----------
   const sim = {
@@ -44,14 +66,17 @@
     cloudTop: 0, cloudBase: 1.0,
     anvil: 0, maturity: 0, rain: 0, coldPool: 0,
     groundHeat: 0,
-    hotspotX: 0.5, heatPulse: 0, cx: 0.5,
+    heatPulse: 0,
+    hx: 0, hz: 0,          // 上昇気流の中心 (世界座標 km)
+    cx: 0.5, hotspotX: 0.5, // 解析モード用 (画面幅比)
     flash: 0, flashPos: [0, 2, 0],
     lcl: 1.0, el: 0, cape: 0, sun: 0, heating: 0, stage: "快晴",
     guides: false,
+    fluidOn: fluidOK,
   };
 
-  let drops = [];   // 前景の雨すじ (画面座標)
-  let bolts = [];   // 稲妻 (世界座標の折れ線)
+  let drops = [];
+  let bolts = [];
   let W = 0, H = 0;
   let renderScale = 0.7;
   let slowFrames = 0;
@@ -61,28 +86,34 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const rand = (a, b) => a + Math.random() * (b - a);
   const mix3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
-  const cxWorld = () => (sim.cx - 0.5) * 2 * WORLD_HALF;
+  const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  function norm3(a) { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+  const cloudX = () => sim.fluidOn ? sim.hx : (sim.cx - 0.5) * 12;
+  const cloudZ = () => sim.fluidOn ? sim.hz : 0;
 
   // 世界座標 [km] → 画面座標 [px]
   function project(x, y, z) {
-    const rx = x - RO[0], ry = y - RO[1], rz = z - RO[2];
-    const cz = ry * FWD[1] + rz * FWD[2];
+    const rel = [x - cam.ro[0], y - cam.ro[1], z - cam.ro[2]];
+    const cz = rel[0] * cam.fwd[0] + rel[1] * cam.fwd[1] + rel[2] * cam.fwd[2];
     if (cz <= 0.1) return null;
-    const cxp = rx;
-    const cyp = ry * UP[1] + rz * UP[2];
-    return [W * 0.5 + (cxp / cz) / TANV * H * 0.5, H * 0.5 - (cyp / cz) / TANV * H * 0.5];
+    const cx = rel[0] * cam.right[0] + rel[1] * cam.right[1] + rel[2] * cam.right[2];
+    const cy = rel[0] * cam.up[0] + rel[1] * cam.up[1] + rel[2] * cam.up[2];
+    return [W * 0.5 + (cx / cz) / TANV * H * 0.5, H * 0.5 - (cy / cz) / TANV * H * 0.5];
   }
 
-  // 画面座標 → 視線が地面(y=0)と交わる世界x
-  function screenToWorldX(px, py) {
+  // 画面座標 → 視線が地面(y=0)と交わる点
+  function screenToGround(px, py) {
     const ux = (2 * px - W) / H * TANV;
     const uy = (H - 2 * py) / H * TANV;
-    const rd = [ux, FWD[1] + uy * UP[1], FWD[2] + uy * UP[2]];
-    if (rd[1] < -0.001) {
-      const t = -RO[1] / rd[1];
-      return RO[0] + rd[0] * t;
-    }
-    return RO[0] + rd[0] * 19; // 空をクリックした場合は雲の距離で
+    const rd = norm3([
+      cam.fwd[0] + cam.right[0] * ux + cam.up[0] * uy,
+      cam.fwd[1] + cam.right[1] * ux + cam.up[1] * uy,
+      cam.fwd[2] + cam.right[2] * ux + cam.up[2] * uy,
+    ]);
+    if (rd[1] >= -0.001) return null;
+    const t = -cam.ro[1] / rd[1];
+    return [cam.ro[0] + rd[0] * t, cam.ro[2] + rd[2] * t];
   }
 
   function resize() {
@@ -93,18 +124,16 @@
   }
   window.addEventListener("resize", resize);
 
-  // ---------- 気象物理 ----------
+  // ---------- 診断用パーセル法 (HUD・ステージ判定・雨) ----------
   function computeProfile(dtH) {
     const dayFrac = clamp((sim.timeMin / 60 - DAY_START) / (DAY_END - DAY_START), 0, 1);
     sim.sun = Math.sin(Math.PI * dayFrac) * (dayFrac > 0 && dayFrac < 1 ? 1 : 0);
 
-    // 地面はゆっくり温まる(熱的慣性)ため、加熱のピークは正午より数時間おくれる
     const gf = GROUND_FACTOR[env.ground];
     sim.groundHeat += (sim.sun * gf - sim.groundHeat) * clamp(dtH / 2.2, 0, 1);
     sim.heating = sim.groundHeat;
 
     const tParcel = env.airTemp + sim.heating * 5 + sim.heatPulse * 2.5 - sim.coldPool;
-
     const dew = tParcel - (100 - env.humidity) / 5;
     sim.lcl = clamp(0.125 * Math.max(0.5, tParcel - dew), 0.3, 5);
 
@@ -128,7 +157,6 @@
     return env.airTemp - env.lapse * Math.min(a, TROPOPAUSE);
   }
 
-  // 湿潤断熱減率は上空ほど大きくなる近似: 5.2 + 0.38a [°C/km]
   function parcelTempAt(a, tParcel) {
     if (a < sim.lcl) return tParcel - DRY_LAPSE * a;
     const tLcl = tParcel - DRY_LAPSE * sim.lcl;
@@ -136,6 +164,7 @@
   }
 
   // ---------- 更新 ----------
+  let fluidAcc = 0;
   function update(dt) {
     if (sim.paused) return;
 
@@ -145,6 +174,7 @@
     sim.heatPulse *= Math.exp(-dt / 20);
     computeProfile(dtH);
 
+    // パーセル法による見積もり (HUD・雨・ステージ用。流体OFF時は描画も駆動)
     let target = 0;
     if (sim.heating > 0.12 && sim.cape > 0.3) target = sim.el;
     else if (sim.heating > 0.3 && env.humidity > 65) target = sim.lcl + 0.4;
@@ -171,12 +201,34 @@
     else if (sim.cloudTop - sim.cloudBase > 1.3) sim.stage = "雄大積雲 — ぐんぐん成長中";
     else sim.stage = "積雲(わた雲)";
 
+    // 解析モードの雲中心 (流体は風で自然に流される)
     sim.cx += (sim.hotspotX - sim.cx) * clamp(dt * 0.15, 0, 1);
     sim.cx = clamp(sim.cx + env.wind * dt * 0.0018, 0.18, 0.82);
     sim.hotspotX = clamp(sim.hotspotX + env.wind * dt * 0.0018, 0.18, 0.82);
 
+    // 流体エンジンを進める (シミュレーション内経過秒をサブステップに分割)
+    if (sim.fluidOn && fluidOK) {
+      fluidAcc = Math.min(fluidAcc + dt * env.minutesPerSec * 60, 25);
+      const steps = Math.min(Math.ceil(fluidAcc / 5), 5);
+      if (fluidAcc > 1) {
+        const dtSub = fluidAcc / steps;
+        for (let i = 0; i < steps; i++) window.CloudFluid.step(dtSub, fluidParams());
+        fluidAcc = 0;
+      }
+    }
+
     updateRain(dt);
     updateBolts(dt);
+  }
+
+  function fluidParams() {
+    return {
+      heat: sim.heating * (1 + sim.heatPulse * 0.5),
+      wind: env.wind,
+      hotX: (sim.hx - DOM.x0) * 1000,  // 領域内メートル座標
+      hotZ: (sim.hz - DOM.z0) * 1000,
+      hotAmp: sim.heatPulse,
+    };
   }
 
   // ---------- 前景の雨・雷 ----------
@@ -198,8 +250,8 @@
 
   function spawnBolt() {
     const rad = 1.3 + (sim.cloudTop - sim.cloudBase) * 0.28;
-    const fx = cxWorld() + rand(-1, 1) * rad * 0.5;
-    const fz = rand(-1.5, 1.5);
+    const fx = cloudX() + rand(-1, 1) * rad * 0.5;
+    const fz = cloudZ() + rand(-1.5, 1.5);
     let y = Math.min(sim.cloudBase + rand(0.5, 2.0), 5);
     sim.flashPos = [fx, y + 0.5, fz];
     const pts = [[fx, y, fz]];
@@ -221,10 +273,10 @@
     }
   }
 
-  // ---------- 空と光の色 (時刻から) ----------
+  // ---------- 空と光の色 ----------
   function palettes() {
     const dayFrac = (sim.timeMin / 60 - DAY_START) / (DAY_END - DAY_START);
-    const sEl = Math.sin(Math.PI * dayFrac); // 太陽高度 (夜は負になる)
+    const sEl = Math.sin(Math.PI * dayFrac); // 太陽高度 (夜は負)
     const day = clamp(sEl * 2.6, 0, 1);
     const dusk = clamp(1 - Math.abs(sEl) / 0.45, 0, 1);
 
@@ -241,7 +293,6 @@
     hor = hor.map(v => v * dark);
     sun = sun.map(v => v * (1 - sim.rain * 0.3));
 
-    // 太陽の方向: 朝は左、夕方は右、雲の向こう側 (逆光の夕焼けが見える)
     const E = Math.PI * clamp(dayFrac, 0, 1);
     const sd = [-Math.cos(E) * 1.0, Math.max(sEl, -0.25) * 0.85 + 0.02, 0.42];
     const len = Math.hypot(...sd);
@@ -256,6 +307,7 @@
   // ---------- 描画 ----------
   let t0 = performance.now();
   function render(now) {
+    computeCam();
     const pal = palettes();
     if (glOK) {
       window.CloudGL.render({
@@ -269,9 +321,12 @@
         rain: sim.rain,
         flash: sim.flash,
         flashPos: sim.flashPos,
-        cx: cxWorld(),
+        cx: cloudX(), cz: cloudZ(),
         cumu: clamp(sim.heating * 1.3, 0, 1) * clamp((env.humidity - 45) / 45, 0, 1),
         gtype: GROUND_ID[env.ground],
+        ro: cam.ro, fwd: cam.fwd, up: cam.up, right: cam.right,
+        mode: sim.fluidOn && fluidOK ? 1 : 0,
+        volTex: fluidOK ? window.CloudFluid.texture() : null,
       });
     }
 
@@ -283,11 +338,12 @@
     if (sim.guides) drawGuides();
   }
 
-  // 地平線のシルエット (木立・ビルなど)
   function drawSkyline() {
-    const hz = project(0, 0, 5000);
+    const fh = norm3([cam.fwd[0], 0, cam.fwd[2]]);
+    const hz = project(cam.ro[0] + fh[0] * 5000, 0, cam.ro[2] + fh[2] * 5000);
     if (!hz) return;
     const y = hz[1];
+    if (y < -20 || y > H + 20) return;
     ctx.fillStyle = "rgba(8,11,17,0.75)";
     if (env.ground === "forest") {
       ctx.beginPath();
@@ -305,14 +361,12 @@
         ctx.fillRect(x + 2, y - bh, 20, bh + 1);
       }
     }
-    // 海と草原はシルエットなし (水平線のみ)
   }
 
   function drawHeatSpot() {
     if (sim.heatPulse < 0.05) return;
-    const wx = (sim.hotspotX - 0.5) * 2 * WORLD_HALF;
-    const p = project(wx, 0.02, 0);
-    const p2 = project(wx, 0.5, 0);
+    const p = project(sim.hx, 0.02, sim.hz);
+    const p2 = project(sim.hx, 0.5, sim.hz);
     if (!p || !p2) return;
     const r = clamp(Math.abs(p[1] - p2[1]) * 1.5, 8, 60);
     const g = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], r);
@@ -358,24 +412,24 @@
   function drawGuides() {
     ctx.font = "11px sans-serif";
     for (let a = 2; a <= 12; a += 2) {
-      const p0 = project(-WORLD_HALF * 1.6, a, 0), p1 = project(WORLD_HALF * 1.6, a, 0);
+      const p0 = project(-10, a, 0), p1 = project(10, a, 0);
       if (!p0 || !p1) continue;
       ctx.strokeStyle = "rgba(255,255,255,0.22)";
       ctx.setLineDash([4, 8]);
       ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.fillText(`${a}km`, Math.max(p0[0], 6), p0[1] - 4);
+      ctx.fillText(`${a}km`, Math.max(Math.min(p0[0], W - 40), 6), p0[1] - 4);
     }
     if (sim.heating > 0.1) {
-      const p0 = project(-WORLD_HALF * 1.6, sim.lcl, 0), p1 = project(WORLD_HALF * 1.6, sim.lcl, 0);
+      const p0 = project(-10, sim.lcl, 0), p1 = project(10, sim.lcl, 0);
       if (p0 && p1) {
         ctx.strokeStyle = "rgba(150,210,255,0.5)";
         ctx.setLineDash([8, 6]);
         ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = "rgba(170,220,255,0.75)";
-        ctx.fillText("凝結高度(ここから上で雲ができる)", Math.min(p1[0], W - 220), p1[1] - 5);
+        ctx.fillText("凝結高度(ここから上で雲ができる)", clamp(p1[0] - 220, 6, W - 230), p1[1] - 5);
       }
     }
   }
@@ -436,7 +490,7 @@
     el("cape-fill").style.width = `${clamp(sim.cape / 30 * 100, 0, 100)}%`;
   }
 
-  // ---------- 入力 ----------
+  // ---------- 入力 (パネル) ----------
   function bindRange(id, key, fmt, valEl) {
     const s = el(id);
     const show = () => { el(valEl).textContent = fmt(parseFloat(s.value)); };
@@ -450,6 +504,14 @@
     v < 6.5 ? "安定" : v < 7.5 ? "ふつう" : v < 8.5 ? "不安定" : "とても不安定", "v-lapse");
   bindRange("s-wind", "wind", v => `${v} m/s`, "v-wind");
   bindRange("s-speed", "minutesPerSec", v => `×${v}`, "v-speed");
+
+  // 環境が変わったら流体の大気を作り直す
+  function reinitFluid() {
+    if (fluidOK) window.CloudFluid.reset(env);
+  }
+  ["s-temp", "s-hum", "s-lapse"].forEach(id =>
+    el(id).addEventListener("change", reinitFluid));
+  reinitFluid();
 
   document.querySelectorAll("#grounds button").forEach(b => {
     b.addEventListener("click", () => {
@@ -471,6 +533,7 @@
       el("s-lapse").value = p.lapse; el("s-wind").value = p.wind;
       ["s-temp", "s-hum", "s-lapse", "s-wind"].forEach(id =>
         el(id).dispatchEvent(new Event("input")));
+      reinitFluid();
     });
   });
 
@@ -483,11 +546,19 @@
     sim.timeMin = 8 * 60;
     sim.cloudTop = 0; sim.anvil = 0; sim.maturity = 0;
     sim.rain = 0; sim.coldPool = 0; sim.heatPulse = 0; sim.groundHeat = 0;
-    sim.hotspotX = sim.cx = 0.5;
+    sim.hotspotX = sim.cx = 0.5; sim.hx = 0; sim.hz = 0;
     drops = []; bolts = [];
+    reinitFluid();
   });
 
   el("c-guides").addEventListener("change", e => { sim.guides = e.target.checked; });
+
+  const fluidChk = el("c-fluid");
+  if (fluidChk) {
+    fluidChk.checked = sim.fluidOn;
+    fluidChk.disabled = !fluidOK;
+    fluidChk.addEventListener("change", e => { sim.fluidOn = e.target.checked && fluidOK; });
+  }
 
   // ---------- 全画面 ----------
   const view = document.getElementById("view");
@@ -502,18 +573,73 @@
       if (!document.fullscreenElement) await view.requestFullscreen();
       else await document.exitFullscreen();
     } catch {
-      // iOS Safari などrequestFullscreen非対応の場合はCSSで擬似全画面
       document.body.classList.toggle("fsfake");
     }
     setTimeout(() => { resize(); fsLabel(); }, 120);
   });
   document.addEventListener("fullscreenchange", () => { resize(); fsLabel(); });
 
+  // ---------- 視点操作 (ドラッグ回転 / ホイール・ピンチでズーム / タップで上昇気流) ----------
+  const pointers = new Map();
+  let dragMoved = false, pinchDist = 0;
+
   canvas.addEventListener("pointerdown", e => {
-    const r = canvas.getBoundingClientRect();
-    const wx = screenToWorldX(e.clientX - r.left, e.clientY - r.top);
-    sim.hotspotX = clamp(wx / (2 * WORLD_HALF) + 0.5, 0.18, 0.82);
-    sim.heatPulse = 1;
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) dragMoved = false;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+  });
+
+  canvas.addEventListener("pointermove", e => {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    if (pointers.size === 1) {
+      if (Math.abs(dx) + Math.abs(dy) > 6) dragMoved = true;
+      if (dragMoved) {
+        cam.yaw += dx * 0.005;
+        cam.el += dy * 0.004;
+      }
+    }
+    p.x = e.clientX; p.y = e.clientY;
+    if (pointers.size === 2) {
+      dragMoved = true;
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinchDist > 0) cam.dist = clamp(cam.dist * pinchDist / Math.max(d, 20), 6, 45);
+      pinchDist = d;
+    }
+  });
+
+  function pointerEnd(e) {
+    const was = pointers.has(e.pointerId);
+    pointers.delete(e.pointerId);
+    if (!was) return;
+    // 動かさずに離した = タップ → 上昇気流を発生
+    if (!dragMoved && pointers.size === 0) {
+      const r = canvas.getBoundingClientRect();
+      const g = screenToGround(e.clientX - r.left, e.clientY - r.top);
+      if (g) {
+        sim.hx = clamp(g[0], DOM.x0 + 2, DOM.x1 - 2);
+        sim.hz = clamp(g[1], DOM.z0 + 2, DOM.z1 - 2);
+        sim.hotspotX = clamp(sim.hx / 12 + 0.5, 0.18, 0.82);
+        sim.heatPulse = 1;
+      }
+    }
+  }
+  canvas.addEventListener("pointerup", pointerEnd);
+  canvas.addEventListener("pointercancel", pointerEnd);
+
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    cam.dist = clamp(cam.dist * (e.deltaY > 0 ? 1.1 : 0.9), 6, 45);
+  }, { passive: false });
+
+  canvas.addEventListener("dblclick", () => {
+    cam.yaw = 0; cam.el = -0.09; cam.dist = 21;
   });
 
   // ---------- メインループ ----------
@@ -523,7 +649,6 @@
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
 
-    // 重い環境では自動で解像度を下げる
     if (dt > 0.045) { if (++slowFrames > 30 && renderScale > 0.45) { renderScale = 0.45; resize(); slowFrames = -9999; } }
     else if (slowFrames > 0) slowFrames--;
 
@@ -538,6 +663,11 @@
   // テスト用フック
   window.__sim = sim;
   window.__env = env;
+  window.__cam = cam;
+  window.__fluidBurst = (n, dt) => {
+    for (let i = 0; i < n; i++) window.CloudFluid.step(dt || 8, fluidParams());
+    if (glOK) window.CloudGL.context().finish();
+  };
 
   resize();
   requestAnimationFrame(frame);

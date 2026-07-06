@@ -20,7 +20,7 @@
         <div class="hud-row"><span>上昇エネルギー</span>
           <span id="cape-meter"><i id="cape-fill"></i></span>
         </div>
-        <div id="hud-hint">地面をクリック/タップすると、その場所に強い上昇気流が生まれます</div>
+        <div id="hud-hint">タップ: 上昇気流を発生 / ドラッグ: 視点を回転 / ホイール・ピンチ: ズーム / ダブルクリック: 視点リセット</div>
       </div>
     </div>
 
@@ -63,6 +63,11 @@
       </div>
 
       <div class="ctl">
+        <label class="chk"><input type="checkbox" id="c-fluid" checked> 流体物理エンジン</label>
+        <small>3D格子で対流を数値計算し、雲の形が物理から生まれる。重い場合はオフに</small>
+      </div>
+
+      <div class="ctl">
         <label class="chk"><input type="checkbox" id="c-guides"> 高度ガイドを表示</label>
       </div>
 
@@ -95,6 +100,7 @@
     </div>
   </div>
   <script src="render.js"></script>
+  <script src="fluid.js"></script>
   <script src="sim.js"></script>
 </body>
 </html>
