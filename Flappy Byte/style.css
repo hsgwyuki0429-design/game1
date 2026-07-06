@@ -100,6 +100,45 @@ canvas {
   animation: score-pop-big 0.5s ease;
 }
 
+#gravity-badge {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #fff;
+  pointer-events: none;
+  z-index: 5;
+}
+
+#gravity-badge.hidden {
+  display: none;
+}
+
+#gravity-badge.warn {
+  background: rgba(255, 107, 107, 0.85);
+  animation: badge-warn-pulse 0.35s ease-in-out infinite;
+}
+
+#gravity-badge.active {
+  background: rgba(186, 104, 200, 0.9);
+  animation: badge-active-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes badge-warn-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50% { transform: translateX(-50%) scale(1.12); }
+}
+
+@keyframes badge-active-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50% { transform: translateX(-50%) scale(1.06); }
+}
+
 @keyframes score-pop {
   0% { transform: scale(1); color: #fff; }
   35% { transform: scale(1.45); color: #ffd166; }
@@ -157,6 +196,45 @@ canvas {
 @keyframes best-pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.1); }
+}
+
+#diff-select {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 0 0 14px;
+}
+
+.diff-btn {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.05s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.diff-btn:active {
+  transform: translateY(2px);
+}
+
+.diff-btn.active {
+  background: #ffd166;
+  border-color: #ffd166;
+  color: #3a2b00;
+}
+
+.diff-btn[data-diff="hard"].active {
+  background: #ff8c42;
+  border-color: #ff8c42;
+}
+
+.diff-btn[data-diff="insane"].active {
+  background: #ff4d6d;
+  border-color: #ff4d6d;
 }
 
 #overlay-sub {
