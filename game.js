@@ -68,7 +68,10 @@
   let state = 'ready';
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
-  let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn;
+  let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer;
+
+  const GRAVITY_WARN_LEAD = 1;
+  const GRAVITY_CLEAR_AFTER = 2.5;
 
   function initClouds() {
     clouds = [];
@@ -106,6 +109,7 @@
     gravityArmed = false;
     gravityPhaseTimer = 0;
     gravityWarn = false;
+    noSpawnTimer = 0;
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
     initClouds();
@@ -384,8 +388,9 @@
       return;
     }
     gravityPhaseTimer -= dt;
-    if (!gravityWarn && gravityPhaseTimer <= 1 && gravityPhaseTimer > 0) {
+    if (!gravityWarn && gravityPhaseTimer <= GRAVITY_WARN_LEAD && gravityPhaseTimer > 0) {
       gravityWarn = true;
+      noSpawnTimer = GRAVITY_WARN_LEAD + GRAVITY_CLEAR_AFTER;
       playGravityWarn();
       gravityBadge.textContent = gravityDir === 1 ? '⚠ まもなく重力反転' : '⚠ まもなく復帰';
       gravityBadge.classList.remove('hidden', 'active');
@@ -395,6 +400,8 @@
       gravityDir *= -1;
       gravityWarn = false;
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) : randRange(cfg.flipNormalDur);
+      pipes = pipes.filter(p => p.passed);
+      noSpawnTimer = Math.max(noSpawnTimer, GRAVITY_CLEAR_AFTER);
       triggerFlash(gravityDir === -1 ? '186,104,200' : '255,255,255', 0.3);
       triggerShake(10, 0.3);
       triggerPunch(0.1);
@@ -426,8 +433,9 @@
     bird.y += bird.vy * dt;
     bird.rot = Math.max(-0.5, Math.min(1.2, (bird.vy / 600) * gravityDir));
 
+    if (noSpawnTimer > 0) noSpawnTimer = Math.max(0, noSpawnTimer - dt);
     spawnTimer -= dt;
-    if (spawnTimer <= 0) {
+    if (noSpawnTimer <= 0 && spawnTimer <= 0) {
       spawnPipe();
       spawnTimer = PIPE_INTERVAL;
     }
