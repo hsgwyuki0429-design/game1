@@ -33,16 +33,20 @@
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
       movingPipeScore: 6, movingChance: 0.3, moveAmp: 40, moveSpeed: 1.1,
       gravityFlipScore: 12, flipArmDelay: 5, flipNormalDur: [7, 4], flipReversedDur: [3, 1.5],
+      slideChance: 0.2, ambushChance: 0.3, road: false,
     },
     hard: {
       label: 'ハード', gravity: 1680, flap: -450, gapBase: 145, gapMin: 105, baseSpeed: 205,
       movingPipeScore: 3, movingChance: 0.45, moveAmp: 52, moveSpeed: 1.5,
       gravityFlipScore: 6, flipArmDelay: 3.5, flipNormalDur: [5.5, 3], flipReversedDur: [3.2, 1.8],
+      slideChance: 0.3, ambushChance: 0.38, road: true,
     },
     insane: {
+      // 重力反転一辺倒だと単調なので、反転は控えめにして特殊土管＆「道」イベントで魅せる
       label: '鬼', gravity: 1850, flap: -470, gapBase: 128, gapMin: 95, baseSpeed: 228,
-      movingPipeScore: 0, movingChance: 0.6, moveAmp: 62, moveSpeed: 1.9,
-      gravityFlipScore: 2, flipArmDelay: 2.5, flipNormalDur: [4, 2], flipReversedDur: [3.5, 2],
+      movingPipeScore: 0, movingChance: 0.65, moveAmp: 62, moveSpeed: 1.9,
+      gravityFlipScore: 6, flipArmDelay: 3, flipNormalDur: [8, 5], flipReversedDur: [3, 1.5],
+      slideChance: 0.42, ambushChance: 0.5, road: true,
     },
   };
 
@@ -188,6 +192,7 @@
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
+  let roadActive, roadRemaining, roadSpawnTimer, roadPhase, roadCooldown;
 
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
@@ -197,6 +202,15 @@
   const GRAVITY_CLEAR_AFTER = 2.0;
   // 重力の切り替え前後は再生速度を3/4に落として対応しやすくする（全体スロー）
   const FLIP_TIME_SCALE = 0.75;
+
+  // 黄色い土管の「道（トンネル）」イベント
+  const ROAD_GAP = 150;          // 道のすき間の高さ（広め）
+  const ROAD_INTERVAL = 0.3;     // 土管どうしの間隔（秒）＝詰めて出して道にする
+  const ROAD_COUNT = 16;         // 1回の道を構成する土管の数
+  const ROAD_PHASE_STEP = 0.32;  // 道のうねり具合（大きいほど急カーブ）
+  const ROAD_COOLDOWN_FIRST = 12;   // 最初の道が出るまで（秒）
+  const ROAD_COOLDOWN_MIN = 15;     // 次の道までの最短（秒）
+  const ROAD_COOLDOWN_MAX = 24;     // 次の道までの最長（秒）
   // 奇襲土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
   // 伸びる進行度は土管のx位置で決める（速度に依らず一定の場所で開ききる）。
   const AMBUSH_GROW_START_X = W * 0.95; // 画面に入ってすぐ伸び始める
@@ -245,6 +259,12 @@
     gravityPhaseTimer = 0;
     gravityWarn = false;
     noSpawnTimer = 0;
+
+    roadActive = false;
+    roadRemaining = 0;
+    roadSpawnTimer = 0;
+    roadPhase = Math.random() * Math.PI * 2;
+    roadCooldown = ROAD_COOLDOWN_FIRST;
 
     controlChaosMode = false;
     controlChaosTimer = 0;
@@ -481,9 +501,9 @@
     const margin = 40 + moveAmp;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
 
-    const isSlideX = score >= 8 && Math.random() < 0.2;
+    const isSlideX = score >= 8 && Math.random() < cfg.slideChance;
     // ⑤ 新しい土管: 奇襲（上下の土管が伸びて、最後にすき間の位置が現れる）
-    const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
+    const isAmbush = score >= 12 && !isSlideX && Math.random() < cfg.ambushChance;
 
     // ノーマルモード以外でのみ、重力反転時に青い土管にする
     const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
@@ -505,6 +525,32 @@
       slideXPhase: Math.random() * Math.PI * 2,
       isAmbush,
       isBlue,
+    });
+  }
+
+  // 黄色い土管の「道（トンネル）」を作る1本。すき間の中心がなめらかにうねる。
+  function spawnRoadPipe() {
+    const gap = ROAD_GAP;
+    const margin = 46;
+    const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
+    roadPhase += ROAD_PHASE_STEP;
+    const gapY = margin + gap / 2 + (0.5 + 0.5 * Math.sin(roadPhase)) * span;
+    pipes.push({
+      x: W + PIPE_WIDTH,
+      baseX: W + PIPE_WIDTH,
+      gapY,
+      baseGapY: gapY,
+      gap,
+      passed: false,
+      moving: false,
+      moveAmp: 0,
+      moveSpeed: 0,
+      movePhase: 0,
+      isSlideX: false,
+      slideXPhase: 0,
+      isAmbush: false,
+      isBlue: false,
+      isRoad: true,
     });
   }
 
@@ -590,7 +636,8 @@
   }
 
   function updateGravityFlip(dt) {
-    if (controlChaosMode) return; 
+    if (controlChaosMode) return;
+    if (roadActive) return; // 「道」イベント中は重力を反転させない（安定した重力で駆け抜ける）
 
     if (!gravityArmed) {
       if (score >= cfg.gravityFlipScore) {
@@ -611,7 +658,8 @@
       gravityDir *= -1;
       gravityWarn = false;
 
-      const levelBonus = Math.floor(score / 5) * 1.0;
+      // 反転時間が際限なく伸びると「ずっと反転」で単調になるので、上乗せは控えめに上限つき
+      const levelBonus = Math.min(2, Math.floor(score / 10) * 0.5);
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
 
       noSpawnTimer = Math.max(noSpawnTimer, GRAVITY_CLEAR_AFTER);
@@ -679,23 +727,51 @@
     bird.rot = Math.max(-0.5, Math.min(1.2, (bird.vy / 600) * gravityDir));
 
     if (noSpawnTimer > 0) noSpawnTimer = Math.max(0, noSpawnTimer - dt);
-    spawnTimer -= dt;
-    
-    if (spawnTimer <= 0) {
-      let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
-      let safeToSpawn = true;
 
-      // ★ 土管が鳥に到達するタイミングが「反転前後2秒間」に含まれる場合はスポーンしない
-      if (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0) {
-        let arrivalRelToFlip = gravityPhaseTimer - willArriveAt;
-        if (arrivalRelToFlip >= -2.0 && arrivalRelToFlip <= 2.0) {
-          safeToSpawn = false; 
+    // 「道（トンネル）」イベントの管理（ハード・鬼）
+    if (roadActive) {
+      // 道の最中は詰めた間隔で黄色い土管を出し続ける
+      roadSpawnTimer -= dt;
+      if (roadSpawnTimer <= 0 && roadRemaining > 0) {
+        spawnRoadPipe();
+        roadRemaining--;
+        roadSpawnTimer = ROAD_INTERVAL;
+        if (roadRemaining <= 0) {
+          roadActive = false;
+          roadCooldown = ROAD_COOLDOWN_MIN + Math.random() * (ROAD_COOLDOWN_MAX - ROAD_COOLDOWN_MIN);
+          spawnTimer = PIPE_INTERVAL * 1.3; // 道の後は少し間を空ける
         }
       }
-      
-      if (safeToSpawn && noSpawnTimer <= 0) {
-        spawnPipe();
-        spawnTimer = PIPE_INTERVAL;
+    } else {
+      // 道イベントの発動判定（重力が通常向きで安定しているときだけ）
+      if (cfg.road && score >= 8 && gravityDir === 1 && !gravityWarn && noSpawnTimer <= 0) {
+        roadCooldown -= dt;
+        if (roadCooldown <= 0) {
+          roadActive = true;
+          roadRemaining = ROAD_COUNT;
+          roadSpawnTimer = 0;
+          spawnFloater(W / 2, H / 2 - 60, '🟨 ロード!', '#ffd24a', 1.5);
+          beep({ freq: 660, glideTo: 990, duration: 0.18, type: 'triangle', volume: 0.12 });
+        }
+      }
+
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) {
+        let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
+        let safeToSpawn = true;
+
+        // ★ 土管が鳥に到達するタイミングが「反転前後2秒間」に含まれる場合はスポーンしない
+        if (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0) {
+          let arrivalRelToFlip = gravityPhaseTimer - willArriveAt;
+          if (arrivalRelToFlip >= -2.0 && arrivalRelToFlip <= 2.0) {
+            safeToSpawn = false;
+          }
+        }
+
+        if (safeToSpawn && noSpawnTimer <= 0) {
+          spawnPipe();
+          spawnTimer = PIPE_INTERVAL;
+        }
       }
     }
 
@@ -839,7 +915,11 @@
         botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
       }
 
-      if (p.isAmbush) {
+      if (p.isRoad) {
+        // 「道」を作る黄色い土管
+        ctx.fillStyle = '#ffde3d';
+        ctx.strokeStyle = '#e0a800';
+      } else if (p.isAmbush) {
         ctx.fillStyle = '#ffb300';
         ctx.strokeStyle = '#ff8f00';
       } else if (p.isSlideX) {
@@ -862,7 +942,9 @@
       ctx.fillRect(renderX, botY, PIPE_WIDTH, bottomHeight);
       ctx.strokeRect(renderX, botY, PIPE_WIDTH, bottomHeight);
 
-      if (p.isAmbush) {
+      if (p.isRoad) {
+        ctx.fillStyle = '#fff08a';
+      } else if (p.isAmbush) {
         ctx.fillStyle = '#ffca28';
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ce93d8';
