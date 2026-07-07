@@ -188,24 +188,15 @@
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
-  let gravEaseTimer; // 反転・復帰の直後だけ加速度をやわらげ、曲線的に通常へ戻すためのタイマー
-  let easyPipesAfterFlip; // 反転・復帰の直後に出す「やさしい土管」の残り数
 
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
-  // 重力反転2秒前から警告を出し、加速度の緩和期間にも入る
+  // 重力反転2秒前から警告を出す
   const GRAVITY_WARN_LEAD = 2.0;
-  // 反転後も2秒間は土管を出さない＆加速度緩和
+  // 反転後も2秒間は土管を出さない
   const GRAVITY_CLEAR_AFTER = 2.0;
-
-  const GRAVITY_REVERSED_SPEED_MUL = 0.8;
-  // 反転・復帰の直後の加速度のやわらげ具合と、通常へ戻しきるまでの時間。
-  // 向きが変わってから、最初の土管が来る少し前には通常(1.0)へ戻りきる。
-  const GRAVITY_EASE_START = 0.5;                          // 変化直後の弱い加速度
-  const GRAVITY_EASE_DURATION = GRAVITY_CLEAR_AFTER + 0.6; // ≒2.6秒かけて曲線的に通常へ
-  // 向きが変わった直後は、特殊なし・間が広めの普通の土管にして立て直しやすくする
-  const EASY_PIPES_AFTER_FLIP = 1;   // 反転／復帰の直後に出す「やさしい土管」の数
-  const EASY_PIPE_GAP_MUL = 1.45;    // その土管のすき間を広げる倍率
+  // 重力の切り替え前後は再生速度を3/4に落として対応しやすくする（全体スロー）
+  const FLIP_TIME_SCALE = 0.75;
   // 奇襲土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
   // 伸びる進行度は土管のx位置で決める（速度に依らず一定の場所で開ききる）。
   const AMBUSH_GROW_START_X = W * 0.95; // 画面に入ってすぐ伸び始める
@@ -254,8 +245,6 @@
     gravityPhaseTimer = 0;
     gravityWarn = false;
     noSpawnTimer = 0;
-    gravEaseTimer = 0;
-    easyPipesAfterFlip = 0;
 
     controlChaosMode = false;
     controlChaosTimer = 0;
@@ -486,19 +475,15 @@
   }
 
   function spawnPipe() {
-    // 反転・復帰の直後は、特殊なし・間が広めの普通の土管にして立て直しやすくする
-    const easy = easyPipesAfterFlip > 0;
-    if (easy) easyPipesAfterFlip--;
-
-    const gap = easy ? currentGap() * EASY_PIPE_GAP_MUL : currentGap();
-    const canMove = !easy && score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
+    const gap = currentGap();
+    const canMove = score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
     const moveAmp = canMove ? cfg.moveAmp * (0.6 + Math.random() * 0.6) : 0;
     const margin = 40 + moveAmp;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
 
-    const isSlideX = !easy && score >= 8 && Math.random() < 0.2;
+    const isSlideX = score >= 8 && Math.random() < 0.2;
     // ⑤ 新しい土管: 奇襲（上下の土管が伸びて、最後にすき間の位置が現れる）
-    const isAmbush = !easy && score >= 12 && !isSlideX && Math.random() < 0.3;
+    const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
 
     // ノーマルモード以外でのみ、重力反転時に青い土管にする
     const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
@@ -626,11 +611,6 @@
       gravityDir *= -1;
       gravityWarn = false;
 
-      // 反転／復帰の直後だけ加速度をやわらげ、曲線的に通常へ戻す
-      gravEaseTimer = GRAVITY_EASE_DURATION;
-      // 直後の最初の土管は、特殊なし・間が広めの普通の土管にする
-      easyPipesAfterFlip = EASY_PIPES_AFTER_FLIP;
-
       const levelBonus = Math.floor(score / 5) * 1.0;
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
 
@@ -658,17 +638,6 @@
 
     elapsed += dt;
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
-
-    // ★ 重力反転の前後2秒間（トランジション期間）の判定
-    const isGravityTransition = (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0 && gravityPhaseTimer <= 2.0) || (noSpawnTimer > 0);
-
-    // ★ トランジション期間はスクロール速度を弱くする
-    if (isGravityTransition) {
-      speed *= 0.55; 
-    } else if (gravityDir === -1) {
-      speed *= GRAVITY_REVERSED_SPEED_MUL;
-    }
-
     groundOffset = (groundOffset + speed * dt) % 40;
 
     if (difficulty === 'insane' && score >= 20) {
@@ -705,16 +674,7 @@
 
     updateGravityFlip(dt);
 
-    // ★ 反転・復帰の直後だけ加速度をやわらげ、次の土管が来る前に曲線的に通常へ戻す
-    let currentGravity = cfg.gravity;
-    if (gravEaseTimer > 0) {
-      const p = 1 - gravEaseTimer / GRAVITY_EASE_DURATION; // 0（変化直後）→ 1（戻りきり）
-      const curve = p * p * (3 - 2 * p);                   // smoothstep でなめらかに
-      currentGravity *= GRAVITY_EASE_START + (1 - GRAVITY_EASE_START) * curve;
-      gravEaseTimer = Math.max(0, gravEaseTimer - dt);
-    }
-
-    bird.vy += currentGravity * gravityDir * dt;
+    bird.vy += cfg.gravity * gravityDir * dt;
     bird.y += bird.vy * dt;
     bird.rot = Math.max(-0.5, Math.min(1.2, (bird.vy / 600) * gravityDir));
 
@@ -1142,9 +1102,18 @@
     }
   }
 
+  // 重力の切り替え前後（反転2秒前〜復帰直後の土管停止中）は再生速度を落とす
+  function flipTimeScale() {
+    if (state !== 'playing') return 1;
+    const inFlipWindow =
+      (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0 && gravityPhaseTimer <= GRAVITY_WARN_LEAD) ||
+      (noSpawnTimer > 0);
+    return inFlipWindow ? FLIP_TIME_SCALE : 1;
+  }
+
   let last = performance.now();
   function loop(now) {
-    const dt = Math.min(0.033, (now - last) / 1000);
+    const dt = Math.min(0.033, (now - last) / 1000) * flipTimeScale();
     last = now;
     update(dt);
     updateFX(dt);
