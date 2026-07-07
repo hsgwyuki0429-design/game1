@@ -1,3 +1,4 @@
+
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -69,6 +70,9 @@
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
+  
+  // 鬼モードの操作変更タイム用変数
+  let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
   const GRAVITY_WARN_LEAD = 1;
   const GRAVITY_CLEAR_AFTER = 2.5;
@@ -111,6 +115,12 @@
     gravityPhaseTimer = 0;
     gravityWarn = false;
     noSpawnTimer = 0;
+    
+    // 鬼モード操作変更の初期化
+    controlChaosMode = false;
+    controlChaosTimer = 0;
+    controlChaosCooldown = 15; // スコア20到達後、さらに15秒後に初回発生
+
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
     initClouds();
@@ -220,8 +230,8 @@
     }
   }
 
-  function spawnFloater(x, y, text, color, scale = 1, isCombo = false) {
-    floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8, scale, isCombo });
+  function spawnFloater(x, y, text, color, scale = 1) {
+    floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8, scale });
   }
 
   function triggerShake(mag, duration) {
@@ -343,6 +353,18 @@
       return;
     }
     if (state === 'playing') {
+      
+      // 鬼モードの操作方法変更タイム中の挙動
+      if (controlChaosMode) {
+        gravityDir *= -1;
+        bird.vy = 0; // 反転時に慣性をリセット
+        triggerFlash('186,104,200', 0.2);
+        triggerShake(5, 0.1);
+        playGravityFlip(gravityDir === -1);
+        vibrate([15, 15]);
+        return; // 通常の羽ばたきは行わない
+      }
+
       bird.vy = cfg.flap * gravityDir;
       squash = 1.4;
       triggerPunch(0.015);
@@ -408,6 +430,8 @@
   }
 
   function updateGravityFlip(dt) {
+    if (controlChaosMode) return; // 操作変更モード中は自動切り替えタイマーをストップ
+
     if (!gravityArmed) {
       if (score >= cfg.gravityFlipScore) {
         gravityArmed = true;
@@ -459,6 +483,40 @@
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
     groundOffset = (groundOffset + speed * dt) % 40;
 
+    // 鬼モードの操作変更タイムの管理
+    if (difficulty === 'insane' && score >= 20) {
+      if (!controlChaosMode) {
+        controlChaosCooldown -= dt;
+        if (controlChaosCooldown <= 0) {
+          controlChaosMode = true;
+          controlChaosTimer = 10; // 10秒間操作変更
+          gravityBadge.textContent = '⚠ エラー: タップで重力反転';
+          gravityBadge.classList.remove('hidden', 'active');
+          gravityBadge.classList.add('warn');
+          playGravityWarn();
+        }
+      } else {
+        controlChaosTimer -= dt;
+        if (controlChaosTimer <= 0) {
+          controlChaosMode = false;
+          controlChaosCooldown = 20 + Math.random() * 10; // 次は20〜30秒後
+          gravityBadge.classList.add('hidden');
+          gravityBadge.classList.remove('warn');
+          spawnFloater(W / 2, H / 2 - 40, "SYSTEM RESTORED", "#4caf50", 1.5);
+          beep({ freq: 800, glideTo: 1200, duration: 0.2, type: 'square', volume: 0.1 });
+          
+          // 操作が戻った時に重力が反転したままなら、すぐに元に戻るようタイマーを仕掛ける
+          if (gravityDir === -1) {
+            gravityPhaseTimer = 1.5;
+            gravityWarn = false;
+          } else {
+            gravityPhaseTimer = randRange(cfg.flipNormalDur);
+            gravityWarn = false;
+          }
+        }
+      }
+    }
+
     updateGravityFlip(dt);
 
     bird.vy += cfg.gravity * gravityDir * dt;
@@ -471,7 +529,7 @@
       
       let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
       let safeToSpawn = true;
-      if (gravityArmed && gravityPhaseTimer > 0) {
+      if (gravityArmed && gravityPhaseTimer > 0 && !controlChaosMode) {
         if (Math.abs(willArriveAt - gravityPhaseTimer) <= 1.2) safeToSpawn = false; 
       }
       
@@ -514,13 +572,12 @@
           const comboWords = ['COOL!', 'GREAT!', 'PERFECT!', 'EXCELLENT!', 'UNSTOPPABLE!', 'GODLIKE!'];
           const word = comboWords[Math.min(comboWords.length - 1, Math.floor((combo - 1) / 2))];
           
-          // テロップ（テキスト）の色を淡いパステル調に変更
-          let comboColor = '#b3e5fc'; // 淡いブルー
-          if (combo >= 10) comboColor = '#ffcdd2'; // 淡いピンク
-          else if (combo >= 5) comboColor = '#e1bee7'; // 淡いパープル
-          else if (combo >= 3) comboColor = '#c8e6c9'; // 淡いグリーン
+          // 色調を数字テロップと同じにする（基本黄色、コンボが続くとオレンジ〜赤）
+          let comboColor = '#ffd166'; 
+          if (combo >= 5) comboColor = '#ff8c42'; 
+          if (combo >= 10) comboColor = '#ff6b6b';
 
-          spawnFloater(bird.x, bird.y - 40, `${word} [x${combo}]`, comboColor, 1.2 + Math.min(1.5, combo * 0.1), true);
+          spawnFloater(bird.x, bird.y - 40, `${word} [x${combo}]`, comboColor, 1.2 + Math.min(1.0, combo * 0.1));
           spawnBurst(bird.x, bird.y, [comboColor, '#fff'], 15, { speed: 200, life: 0.6, size: 4, starRatio: 1 });
         } else {
           combo = 0; 
@@ -538,7 +595,7 @@
           spawnShockwave(bird.x, bird.y, '#ffd166', 130, 0.5);
         }
         if(!combo || milestone) {
-            spawnFloater(bird.x, bird.y - 20, milestone ? `+1 (x${score / 5})` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1, false);
+            spawnFloater(bird.x, bird.y - 20, milestone ? `+1 (x${score / 5})` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
         }
         spawnBurst(
           bird.x, bird.y,
@@ -771,22 +828,13 @@
     ctx.textAlign = 'center';
     for (const f of floaters) {
       const a = Math.max(0, f.life / f.maxLife);
-      const growth = 1 + (1 - a) * (f.isCombo ? 0.3 : 0.15);
+      const growth = 1 + (1 - a) * 0.15;
       
-      if (f.isCombo) {
-        ctx.font = `italic 900 ${Math.round(22 * (f.scale || 1) * growth)}px "Segoe UI", sans-serif`;
-        ctx.globalAlpha = a;
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = '#000';
-        ctx.strokeText(f.text, f.x, f.y);
-        ctx.fillStyle = f.color;
-        ctx.fillText(f.text, f.x, f.y);
-      } else {
-        ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px "Segoe UI", sans-serif`;
-        ctx.globalAlpha = a;
-        ctx.fillStyle = f.color;
-        ctx.fillText(f.text, f.x, f.y);
-      }
+      // コンボのテロップも通常スコアのテロップと同じフォント・スタイルに統一
+      ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px "Segoe UI", sans-serif`;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, f.x, f.y);
       ctx.globalAlpha = 1;
     }
     ctx.textAlign = 'left';
@@ -878,3 +926,6 @@
     flap();
   });
 })();
+
+
+```
