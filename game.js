@@ -46,7 +46,6 @@
     },
   };
 
-  // --- 選べるキャラクター（見た目のみ変化、性能は同じ） ---
   const CHARACTERS = {
     byte:  { name: 'バイト',   body: '#ffd166', stroke: '#c99a2e', beak: '#ff8c42', cheek: '#ffb3ba', glow: '255,209,102' },
     robin: { name: 'コマドリ', body: '#ff6b6b', stroke: '#c1440e', beak: '#ffb300', cheek: '#ffd1d1', glow: '255,107,107' },
@@ -56,7 +55,6 @@
     snow:  { name: 'スノウ',   body: '#eceff1', stroke: '#90a4ae', beak: '#ffb300', cheek: '#ffd1d1', glow: '236,239,241' },
   };
 
-  // --- 選べる土管デザイン（通常・動く土管の色を変更） ---
   const PIPE_SKINS = {
     classic: { name: 'クラシック', fill: '#4caf50', stroke: '#2e7d32', cap: '#66bb6a', mFill: '#42a5f5', mStroke: '#1565c0', mCap: '#64b5f6' },
     candy:   { name: 'キャンディ', fill: '#ff8fab', stroke: '#c9184a', cap: '#ffb3c6', mFill: '#ffca3a', mStroke: '#e09f00', mCap: '#ffe08a' },
@@ -103,7 +101,6 @@
   });
   selectDifficulty(difficulty);
 
-  // --- サブパネル（キャラ選択 / 土管デザイン / 遊び方）の開閉 ---
   function openPanel(name) {
     overlayInner.classList.add('hidden');
     Object.entries(subpanels).forEach(([k, el]) => el.classList.toggle('hidden', k !== name));
@@ -125,7 +122,6 @@
     });
   });
 
-  // キャラ選択カードを生成
   function buildCharGrid() {
     charGrid.innerHTML = '';
     Object.entries(CHARACTERS).forEach(([key, c]) => {
@@ -155,7 +151,6 @@
     playFlap();
   }
 
-  // 土管デザインカードを生成
   function buildPipeGrid() {
     pipeGrid.innerHTML = '';
     Object.entries(PIPE_SKINS).forEach(([key, s]) => {
@@ -194,16 +189,15 @@
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
   
-  // 鬼モード専用の操作変更タイム用変数
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
-  const GRAVITY_WARN_LEAD = 1;
-  const GRAVITY_CLEAR_AFTER = 2.5;
-  // 重力反転中のゆるめ係数（重力と横スクロール速度を弱める）
+  // 重力反転2秒前から警告を出し、加速度の緩和期間にも入る
+  const GRAVITY_WARN_LEAD = 2.0; 
+  // 反転後も2秒間は土管を出さない＆加速度緩和
+  const GRAVITY_CLEAR_AFTER = 2.0; 
+  
   const GRAVITY_REVERSED_GRAV_MUL = 0.72;
   const GRAVITY_REVERSED_SPEED_MUL = 0.8;
-  // 奇襲(横)の滑り込み距離。画面幅ぶんだと右外に隠れて突然出るので、画面内に収める
-  const AMBUSH_SIDE_OFFSET = 160;
 
   function initClouds() {
     clouds = [];
@@ -244,10 +238,9 @@
     gravityWarn = false;
     noSpawnTimer = 0;
 
-    // 鬼モードイベント変数の初期化
     controlChaosMode = false;
     controlChaosTimer = 0;
-    controlChaosCooldown = 15; // スコア20達成後、15秒経過で初回発動
+    controlChaosCooldown = 15;
     combo = 0;
 
     gravityBadge.classList.add('hidden');
@@ -257,10 +250,6 @@
     newBestLine.classList.add('hidden');
   }
 
-  // --- audio (synthesized, no external assets) ---
-  // やわらかく心地よい響きにするため、全体を「ローパス＋軽いリバーブ」の
-  // マスターチェーンに通し、各音は角の立たないsine/triangle中心＆
-  // なめらかなフェードで鳴らす。
   let audioCtx = null;
   let masterGain = null;
   let masterFilter = null;
@@ -284,7 +273,6 @@
       const AudioCtor = window.AudioContext || window.webkitAudioContext;
       audioCtx = AudioCtor ? new AudioCtor() : null;
       if (audioCtx) {
-        // やさしいトーンにするマスターローパス
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
         masterFilter.frequency.value = 3800;
@@ -292,21 +280,19 @@
         masterGain = audioCtx.createGain();
         masterGain.gain.value = 0.85;
         masterFilter.connect(masterGain).connect(audioCtx.destination);
-        // ほんのり響きを足す軽いリバーブ
         try {
           const convolver = audioCtx.createConvolver();
           convolver.buffer = buildReverbImpulse(audioCtx);
           reverbGain = audioCtx.createGain();
           reverbGain.gain.value = 0.18;
           masterGain.connect(convolver).connect(reverbGain).connect(audioCtx.destination);
-        } catch (e) { /* リバーブ非対応環境は素通し */ }
+        } catch (e) { }
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
   }
 
-  // なめらかなアタック/リリース付きの単音
   function tone({ freq = 440, duration = 0.1, type = 'sine', volume = 0.2, glideTo = null, delay = 0, attack = 0.012 }) {
     const ctxA = getAudioCtx();
     if (!ctxA) return;
@@ -324,7 +310,6 @@
     osc.stop(t0 + duration + 0.03);
   }
 
-  // 基音＋やわらかい倍音を重ねて丸い音色に
   function beep(opts) {
     tone(opts);
     if (opts.rich !== false && opts.type !== 'sine') {
@@ -337,23 +322,14 @@
     tone({ freq: 840, glideTo: 1280, duration: 0.08, type: 'triangle', volume: 0.05, attack: 0.004 });
   }
   function playScore(milestone) {
-    // 気持ちのよいベル（メジャー系）
-    tone({ freq: 784, duration: 0.16, type: 'triangle', volume: 0.16 }); // G5
-    tone({ freq: 1175, duration: 0.2, type: 'sine', volume: 0.11, delay: 0.05 }); // D6
+    tone({ freq: 784, duration: 0.16, type: 'triangle', volume: 0.16 });
+    tone({ freq: 1175, duration: 0.2, type: 'sine', volume: 0.11, delay: 0.05 });
     if (milestone) {
-      tone({ freq: 1568, duration: 0.28, type: 'triangle', volume: 0.13, delay: 0.11 }); // G6
+      tone({ freq: 1568, duration: 0.28, type: 'triangle', volume: 0.13, delay: 0.11 });
       tone({ freq: 2349, duration: 0.28, type: 'sine', volume: 0.06, delay: 0.11 });
     }
   }
-  function playCombo() {
-    // 上昇するペンタトニックのきらめき
-    [659, 880, 1174, 1568].forEach((f, i) => {
-      tone({ freq: f, duration: 0.16, type: 'triangle', volume: 0.12, delay: i * 0.055 });
-      tone({ freq: f * 2, duration: 0.12, type: 'sine', volume: 0.04, delay: i * 0.055 });
-    });
-  }
   function playHit() {
-    // 角の立たない、やわらかな着地の低音
     tone({ freq: 300, glideTo: 90, duration: 0.34, type: 'sine', volume: 0.22, attack: 0.004 });
     tone({ freq: 150, glideTo: 60, duration: 0.4, type: 'triangle', volume: 0.1, attack: 0.006 });
   }
@@ -362,12 +338,10 @@
     tone({ freq: 660, duration: 0.16, type: 'sine', volume: 0.12, delay: 0.2 });
   }
   function playGravityFlip(reversed) {
-    // 反転＝上昇、復帰＝下降のなめらかなスウィープ
     tone({ freq: reversed ? 440 : 880, glideTo: reversed ? 880 : 440, duration: 0.4, type: 'sine', volume: 0.16, attack: 0.02 });
     tone({ freq: reversed ? 660 : 1320, glideTo: reversed ? 1320 : 660, duration: 0.4, type: 'triangle', volume: 0.06, attack: 0.02 });
   }
   function playBest() {
-    // 明るいメジャーのアルペジオ・ファンファーレ
     [523, 659, 784, 1047, 1319].forEach((freq, i) => {
       tone({ freq, duration: 0.26, type: 'triangle', volume: 0.14, delay: i * 0.1 });
       tone({ freq: freq * 1.5, duration: 0.22, type: 'sine', volume: 0.05, delay: i * 0.1 + 0.02 });
@@ -499,23 +473,11 @@
     const margin = 40 + moveAmp;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
     
-    // ④ 新しい土管: スライド
     const isSlideX = score >= 8 && Math.random() < 0.2;
-    // ⑤ 新しい土管: 奇襲 (上、中、下のいずれかに固定)
     const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
-    let ambushDir = Math.random() < 0.5 ? 'bottom' : 'side';
-
-    // ノーマルモード以外でのみ、重力反転時に青い土管にする
     const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
 
     let baseGapY = margin + Math.random() * span + gap / 2;
-
-    if (isAmbush) {
-       const r = Math.random();
-       if (r < 0.33) baseGapY = margin + gap / 2;
-       else if (r < 0.66) baseGapY = H / 2;
-       else baseGapY = H - GROUND_H - margin - gap / 2;
-    }
 
     pipes.push({
       x: W + PIPE_WIDTH,
@@ -531,9 +493,8 @@
       isSlideX,
       slideXPhase: Math.random() * Math.PI * 2,
       isAmbush,
-      ambushDir,
       ambushT: 0,
-      ambushStartX: W * 0.35, // 画面内に入ってから奇襲開始
+      ambushStartX: W * 0.65,
       isBlue,
     });
   }
@@ -545,15 +506,14 @@
     }
     if (state === 'playing') {
       
-      // 鬼モードの操作変更タイム中は、タップで重力が反転する
       if (controlChaosMode) {
         gravityDir *= -1;
-        bird.vy = 0; // 重力反転時に速度リセット
+        bird.vy = 0;
         triggerFlash('186,104,200', 0.15);
         triggerShake(5, 0.1);
         playGravityFlip(gravityDir === -1);
         vibrate([10, 15]);
-        return; // 通常のジャンプは行わない
+        return;
       }
 
       bird.vy = cfg.flap * gravityDir;
@@ -621,7 +581,7 @@
   }
 
   function updateGravityFlip(dt) {
-    if (controlChaosMode) return; // 操作変更イベント中は自動タイマーをストップ
+    if (controlChaosMode) return; 
 
     if (!gravityArmed) {
       if (score >= cfg.gravityFlipScore) {
@@ -642,11 +602,8 @@
       gravityDir *= -1;
       gravityWarn = false;
       
-      // ① レベルが高くなるほど反転している時間を増やす
       const levelBonus = Math.floor(score / 5) * 1.0; 
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
-      
-      // 反転時も土管を残すため削除処理は書かない
       
       noSpawnTimer = Math.max(noSpawnTimer, GRAVITY_CLEAR_AFTER);
       triggerFlash(gravityDir === -1 ? '186,104,200' : '255,255,255', 0.3);
@@ -672,22 +629,25 @@
 
     elapsed += dt;
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
-    // 重力反転中はむずかしくなりすぎるので、進む速度を少しゆるめて反応する余裕を持たせる
-    if (gravityDir === -1) speed *= GRAVITY_REVERSED_SPEED_MUL;
 
-    // 奇襲土管が画面に表示されている間だけ速度を 1/3 に
-    const hasAmbushOnScreen = pipes.some(p => p.isAmbush && p.x < W && p.x > -PIPE_WIDTH);
-    if (hasAmbushOnScreen) speed *= 0.33;
+    // ★ 重力反転の前後2秒間（トランジション期間）の判定
+    const isGravityTransition = (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0 && gravityPhaseTimer <= 2.0) || (noSpawnTimer > 0);
+
+    // ★ トランジション期間はスクロール速度を弱くする
+    if (isGravityTransition) {
+      speed *= 0.55; 
+    } else if (gravityDir === -1) {
+      speed *= GRAVITY_REVERSED_SPEED_MUL;
+    }
 
     groundOffset = (groundOffset + speed * dt) % 40;
 
-    // 鬼モードの操作変更タイムイベントの管理
     if (difficulty === 'insane' && score >= 20) {
       if (!controlChaosMode) {
         controlChaosCooldown -= dt;
         if (controlChaosCooldown <= 0) {
           controlChaosMode = true;
-          controlChaosTimer = 10; // 10秒間操作変更
+          controlChaosTimer = 10; 
           gravityBadge.textContent = '⚠ 警告: タップで重力反転';
           gravityBadge.classList.remove('hidden', 'active');
           gravityBadge.classList.add('warn');
@@ -697,13 +657,12 @@
         controlChaosTimer -= dt;
         if (controlChaosTimer <= 0) {
           controlChaosMode = false;
-          controlChaosCooldown = 20 + Math.random() * 10; // 次の発生まで20〜30秒
+          controlChaosCooldown = 20 + Math.random() * 10; 
           gravityBadge.classList.add('hidden');
           gravityBadge.classList.remove('warn');
           spawnFloater(W / 2, H / 2 - 40, "SYSTEM RESTORED", "#4caf50", 1.5);
           beep({ freq: 800, glideTo: 1200, duration: 0.2, type: 'square', volume: 0.1 });
           
-          // イベント終了後、安全に通常の重力サイクルに戻す
           if (gravityDir === -1) {
             gravityPhaseTimer = 1.5;
             gravityWarn = false;
@@ -717,24 +676,34 @@
 
     updateGravityFlip(dt);
 
-    // 重力反転中は重力を少し弱めて、操作しやすくする
-    const gravMul = gravityDir === -1 ? GRAVITY_REVERSED_GRAV_MUL : 1;
-    bird.vy += cfg.gravity * gravityDir * gravMul * dt;
+    // ★ トランジション期間は重力（落下加速度）を弱くする
+    let currentGravity = cfg.gravity;
+    if (isGravityTransition) {
+      currentGravity *= 0.5;
+    } else if (gravityDir === -1) {
+      currentGravity *= GRAVITY_REVERSED_GRAV_MUL;
+    }
+
+    bird.vy += currentGravity * gravityDir * dt;
     bird.y += bird.vy * dt;
     bird.rot = Math.max(-0.5, Math.min(1.2, (bird.vy / 600) * gravityDir));
 
     if (noSpawnTimer > 0) noSpawnTimer = Math.max(0, noSpawnTimer - dt);
     spawnTimer -= dt;
-    if (noSpawnTimer <= 0 && spawnTimer <= 0) {
-      
-      // ② 重力の向きが変わる瞬間前後一秒は土管がないようにする
+    
+    if (spawnTimer <= 0) {
       let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
       let safeToSpawn = true;
-      if (gravityArmed && gravityPhaseTimer > 0 && !controlChaosMode) {
-        if (Math.abs(willArriveAt - gravityPhaseTimer) <= 1.0) safeToSpawn = false; 
+
+      // ★ 土管が鳥に到達するタイミングが「反転前後2秒間」に含まれる場合はスポーンしない
+      if (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0) {
+        let arrivalRelToFlip = gravityPhaseTimer - willArriveAt;
+        if (arrivalRelToFlip >= -2.0 && arrivalRelToFlip <= 2.0) {
+          safeToSpawn = false; 
+        }
       }
       
-      if (safeToSpawn) {
+      if (safeToSpawn && noSpawnTimer <= 0) {
         spawnPipe();
         spawnTimer = PIPE_INTERVAL;
       }
@@ -745,16 +714,13 @@
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
       
-      // ⑤ 新しい土管（奇襲）のアニメーション進行 → 画面内に入ってから奇襲開始
-      // 右から滑り込む動きが速すぎるので、進行速度を 1/3 にしてゆっくり奇襲する
       if (p.isAmbush) {
         if (p.x < p.ambushStartX) {
-          p.ambushT += dt * (3.5 / 3);
+          p.ambushT += dt * 3.5; 
           if (p.ambushT > 1) p.ambushT = 1;
         }
       }
 
-      // ④ 新しい土管（横スライド）の移動
       if (p.isSlideX) {
         p.baseX -= speed * dt;
         p.x = p.baseX + Math.sin(elapsed * 3.5 + p.slideXPhase) * 60; 
@@ -815,20 +781,22 @@
       }
     }
 
-    // 当たり判定
     for (const p of pipes) {
       let cx = p.x;
-      let cyOffset = 0;
+      let topH = p.gapY - p.gap / 2;
+      let botY = p.gapY + p.gap / 2;
+
       if (p.isAmbush) {
          const ease = 1 - Math.pow(1 - p.ambushT, 4); 
-         if (p.ambushDir === 'bottom') cyOffset = (1 - ease) * H;
-         else cx = p.x + (1 - ease) * AMBUSH_SIDE_OFFSET;
+         const startTopH = 20;
+         const startBotY = (H - GROUND_H) - 20;
+         
+         topH = startTopH + (topH - startTopH) * ease;
+         botY = startBotY + (botY - startBotY) * ease;
       }
 
       const inX = bird.x + bird.r > cx && bird.x - bird.r < cx + PIPE_WIDTH;
       if (inX) {
-        const topH = p.gapY - p.gap / 2 + cyOffset;
-        const botY = p.gapY + p.gap / 2 + cyOffset;
         if (bird.y - bird.r < topH || bird.y + bird.r > botY) {
           endGame();
           return;
@@ -881,16 +849,17 @@
   function drawPipes() {
     for (const p of pipes) {
       let renderX = p.x;
-      let renderOffsetY = 0;
+      let topH = p.gapY - p.gap / 2;
+      let botY = p.gapY + p.gap / 2;
       
       if (p.isAmbush) {
          const ease = 1 - Math.pow(1 - p.ambushT, 4);
-         if (p.ambushDir === 'bottom') renderOffsetY = (1 - ease) * H;
-         else renderX = p.x + (1 - ease) * AMBUSH_SIDE_OFFSET;
+         const startTopH = 20; 
+         const startBotY = (H - GROUND_H) - 20;
+         
+         topH = startTopH + (topH - startTopH) * ease;
+         botY = startBotY + (botY - startBotY) * ease;
       }
-
-      const topH = p.gapY - p.gap / 2 + renderOffsetY;
-      const botY = p.gapY + p.gap / 2 + renderOffsetY;
 
       if (p.isAmbush) {
         ctx.fillStyle = '#ffb300';
@@ -899,11 +868,9 @@
         ctx.fillStyle = '#ab47bc';
         ctx.strokeStyle = '#7b1fa2';
       } else if (p.isBlue) {
-        // 青い土管のカラーリング
         ctx.fillStyle = '#00e5ff';
         ctx.strokeStyle = '#00b8d4';
       } else {
-        // 選択中の土管デザインを反映（通常/動く土管）
         ctx.fillStyle = p.moving ? pipeSkin.mFill : pipeSkin.fill;
         ctx.strokeStyle = p.moving ? pipeSkin.mStroke : pipeSkin.stroke;
       }
@@ -922,7 +889,7 @@
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ce93d8';
       } else if (p.isBlue) {
-        ctx.fillStyle = '#84ffff'; // 青い土管のハイライト
+        ctx.fillStyle = '#84ffff';
       } else {
         ctx.fillStyle = p.moving ? pipeSkin.mCap : pipeSkin.cap;
       }
@@ -950,17 +917,15 @@
     ctx.globalCompositeOperation = 'lighter';
     for (const s of shockwaves) {
       const t = 1 - s.life / s.maxLife;
-      const ease = 1 - Math.pow(1 - t, 3); // やわらかく広がる
+      const ease = 1 - Math.pow(1 - t, 3);
       const r = s.maxR * ease;
       const a = Math.max(0, 1 - t);
       ctx.strokeStyle = s.color;
-      // メインの輪
       ctx.lineWidth = 4 * (1 - t) + 1;
       ctx.globalAlpha = a * 0.7;
       ctx.beginPath();
       ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
       ctx.stroke();
-      // 内側のやわらかいエコー
       ctx.lineWidth = 2 * (1 - t) + 0.5;
       ctx.globalAlpha = a * 0.35;
       ctx.beginPath();
@@ -972,7 +937,6 @@
   }
 
   function drawParticles() {
-    // やわらかいブルーム層（加算合成で光が滲むような気持ちよさ）
     ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
       const a = Math.max(0, p.life / p.maxLife);
@@ -1005,13 +969,12 @@
   }
 
   function drawTrail() {
-    // キャラ色のなめらかな光の尾（加算合成でやさしく発光）
     ctx.globalCompositeOperation = 'lighter';
     const n = trail.length;
     for (let i = 0; i < n; i++) {
       const t = trail[i];
       const life = Math.max(0, t.life / t.maxLife);
-      const grow = (i / n); // 新しいほど太く
+      const grow = (i / n);
       const a = life * 0.28;
       ctx.globalAlpha = a;
       ctx.fillStyle = `rgba(${charCfg.glow}, 1)`;
@@ -1045,7 +1008,6 @@
       const a = Math.max(0, f.life / f.maxLife);
       const growth = 1 + (1 - a) * 0.15;
       
-      // 通常のスコアと同じフォントスタイルに統一
       ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px sans-serif`;
       ctx.globalAlpha = a;
       ctx.fillStyle = f.color;
@@ -1055,7 +1017,6 @@
     ctx.textAlign = 'left';
   }
 
-  // 選択中キャラの見た目で鳥を描く（本体スケール後の座標系で呼ぶ）
   function paintBird(c, r) {
     ctx.fillStyle = c.body;
     ctx.beginPath();
@@ -1064,24 +1025,20 @@
     ctx.strokeStyle = c.stroke;
     ctx.lineWidth = 2;
     ctx.stroke();
-    // ほっぺ
     ctx.fillStyle = c.cheek;
     ctx.globalAlpha = 0.7;
     ctx.beginPath();
     ctx.arc(-r * 0.15, r * 0.28, r * 0.22, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    // 白目
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(r * 0.36, -r * 0.28, r * 0.32, 0, Math.PI * 2);
     ctx.fill();
-    // 黒目
     ctx.fillStyle = '#3a2b00';
     ctx.beginPath();
     ctx.arc(r * 0.46, -r * 0.28, r * 0.14, 0, Math.PI * 2);
     ctx.fill();
-    // くちばし
     ctx.fillStyle = c.beak;
     ctx.beginPath();
     ctx.moveTo(r - 2, 0);
@@ -1100,7 +1057,6 @@
     ctx.restore();
   }
 
-  // 選択画面用の小さな鳥アイコン
   function drawBirdSwatch(c2, cfg2, cx, cy, r) {
     c2.save();
     c2.clearRect(0, 0, cx * 2, cy * 2);
