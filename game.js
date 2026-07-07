@@ -189,6 +189,7 @@
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
   let gravEaseTimer; // 反転・復帰の直後だけ加速度をやわらげ、曲線的に通常へ戻すためのタイマー
+  let easyPipesAfterFlip; // 反転・復帰の直後に出す「やさしい土管」の残り数
 
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
@@ -202,6 +203,9 @@
   // 向きが変わってから、最初の土管が来る少し前には通常(1.0)へ戻りきる。
   const GRAVITY_EASE_START = 0.5;                          // 変化直後の弱い加速度
   const GRAVITY_EASE_DURATION = GRAVITY_CLEAR_AFTER + 0.6; // ≒2.6秒かけて曲線的に通常へ
+  // 向きが変わった直後は、特殊なし・間が広めの普通の土管にして立て直しやすくする
+  const EASY_PIPES_AFTER_FLIP = 1;   // 反転／復帰の直後に出す「やさしい土管」の数
+  const EASY_PIPE_GAP_MUL = 1.45;    // その土管のすき間を広げる倍率
   // 奇襲土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
   // 伸びる進行度は土管のx位置で決める（速度に依らず一定の場所で開ききる）。
   const AMBUSH_GROW_START_X = W * 0.95; // 画面に入ってすぐ伸び始める
@@ -251,6 +255,7 @@
     gravityWarn = false;
     noSpawnTimer = 0;
     gravEaseTimer = 0;
+    easyPipesAfterFlip = 0;
 
     controlChaosMode = false;
     controlChaosTimer = 0;
@@ -481,15 +486,19 @@
   }
 
   function spawnPipe() {
-    const gap = currentGap();
-    const canMove = score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
+    // 反転・復帰の直後は、特殊なし・間が広めの普通の土管にして立て直しやすくする
+    const easy = easyPipesAfterFlip > 0;
+    if (easy) easyPipesAfterFlip--;
+
+    const gap = easy ? currentGap() * EASY_PIPE_GAP_MUL : currentGap();
+    const canMove = !easy && score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
     const moveAmp = canMove ? cfg.moveAmp * (0.6 + Math.random() * 0.6) : 0;
     const margin = 40 + moveAmp;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
-    
-    const isSlideX = score >= 8 && Math.random() < 0.2;
+
+    const isSlideX = !easy && score >= 8 && Math.random() < 0.2;
     // ⑤ 新しい土管: 奇襲（上下の土管が伸びて、最後にすき間の位置が現れる）
-    const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
+    const isAmbush = !easy && score >= 12 && !isSlideX && Math.random() < 0.3;
 
     // ノーマルモード以外でのみ、重力反転時に青い土管にする
     const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
@@ -619,6 +628,8 @@
 
       // 反転／復帰の直後だけ加速度をやわらげ、曲線的に通常へ戻す
       gravEaseTimer = GRAVITY_EASE_DURATION;
+      // 直後の最初の土管は、特殊なし・間が広めの普通の土管にする
+      easyPipesAfterFlip = EASY_PIPES_AFTER_FLIP;
 
       const levelBonus = Math.floor(score / 5) * 1.0;
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
