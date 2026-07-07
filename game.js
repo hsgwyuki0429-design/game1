@@ -22,12 +22,12 @@
     normal: {
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
       movingPipeScore: 6, movingChance: 0.3, moveAmp: 40, moveSpeed: 1.1,
-      gravityFlipScore: 5, flipArmDelay: 5, flipNormalDur: [7, 4], flipReversedDur: [3, 1.5],
+      gravityFlipScore: 12, flipArmDelay: 5, flipNormalDur: [7, 4], flipReversedDur: [3, 1.5],
     },
     hard: {
       label: 'ハード', gravity: 1680, flap: -450, gapBase: 145, gapMin: 105, baseSpeed: 205,
       movingPipeScore: 3, movingChance: 0.45, moveAmp: 52, moveSpeed: 1.5,
-      gravityFlipScore: 4, flipArmDelay: 3.5, flipNormalDur: [5.5, 3], flipReversedDur: [3.2, 1.8],
+      gravityFlipScore: 6, flipArmDelay: 3.5, flipNormalDur: [5.5, 3], flipReversedDur: [3.2, 1.8],
     },
     insane: {
       label: '鬼', gravity: 1850, flap: -470, gapBase: 128, gapMin: 95, baseSpeed: 228,
@@ -69,9 +69,6 @@
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
-  
-  // 鬼モードの操作変更タイム用変数
-  let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
   const GRAVITY_WARN_LEAD = 1;
   const GRAVITY_CLEAR_AFTER = 2.5;
@@ -114,12 +111,6 @@
     gravityPhaseTimer = 0;
     gravityWarn = false;
     noSpawnTimer = 0;
-    
-    // 鬼モード操作変更の初期化
-    controlChaosMode = false;
-    controlChaosTimer = 0;
-    controlChaosCooldown = 15; // スコア20到達後、さらに15秒後に初回発生
-
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
     initClouds();
@@ -309,12 +300,11 @@
     const margin = 40 + moveAmp;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
     
+    // ④ 新しい土管: スライド
     const isSlideX = score >= 8 && Math.random() < 0.2;
+    // ⑤ 新しい土管: 奇襲 (上、中、下のいずれかに固定)
     const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
     let ambushDir = Math.random() < 0.5 ? 'bottom' : 'side';
-
-    // ノーマルモード以外でのみ重力反転中に青い土管になる
-    const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
 
     let baseGapY = margin + Math.random() * span + gap / 2;
 
@@ -327,7 +317,7 @@
 
     pipes.push({
       x: W + PIPE_WIDTH,
-      baseX: W + PIPE_WIDTH, 
+      baseX: W + PIPE_WIDTH,
       gapY: baseGapY,
       baseGapY,
       gap,
@@ -340,8 +330,7 @@
       slideXPhase: Math.random() * Math.PI * 2,
       isAmbush,
       ambushDir,
-      ambushT: 0, 
-      isBlue,
+      ambushT: 0,
     });
   }
 
@@ -351,18 +340,6 @@
       return;
     }
     if (state === 'playing') {
-      
-      // 鬼モードの操作方法変更タイム中の挙動
-      if (controlChaosMode) {
-        gravityDir *= -1;
-        bird.vy = 0; // 反転時に慣性をリセット
-        triggerFlash('186,104,200', 0.15);
-        triggerShake(5, 0.1);
-        playGravityFlip(gravityDir === -1);
-        vibrate([10, 15]);
-        return; // 通常の羽ばたきは行わない
-      }
-
       bird.vy = cfg.flap * gravityDir;
       squash = 1.4;
       triggerPunch(0.015);
@@ -428,8 +405,6 @@
   }
 
   function updateGravityFlip(dt) {
-    if (controlChaosMode) return; // 操作変更モード中は自動切り替えタイマーをストップ
-
     if (!gravityArmed) {
       if (score >= cfg.gravityFlipScore) {
         gravityArmed = true;
@@ -449,13 +424,13 @@
       gravityDir *= -1;
       gravityWarn = false;
       
-      const level = Math.floor(score / 5);
-      if (gravityDir === -1) {
-        gravityPhaseTimer = randRange(cfg.flipReversedDur) + level * 0.8;
-      } else {
-        gravityPhaseTimer = Math.max(1.5, randRange(cfg.flipNormalDur) - level * 0.6);
-      }
+      // ① レベルが高くなるほど反転している時間を増やす
+      const levelBonus = Math.floor(score / 5) * 1.0; 
+      gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
       
+      // ① 重力が反転している時も土管を残すため削除: pipes = pipes.filter(p => p.passed);
+      
+      noSpawnTimer = Math.max(noSpawnTimer, GRAVITY_CLEAR_AFTER);
       triggerFlash(gravityDir === -1 ? '186,104,200' : '255,255,255', 0.3);
       triggerShake(10, 0.3);
       triggerPunch(0.1);
@@ -481,40 +456,6 @@
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
     groundOffset = (groundOffset + speed * dt) % 40;
 
-    // 鬼モードの操作変更タイムの管理
-    if (difficulty === 'insane' && score >= 20) {
-      if (!controlChaosMode) {
-        controlChaosCooldown -= dt;
-        if (controlChaosCooldown <= 0) {
-          controlChaosMode = true;
-          controlChaosTimer = 10; // 10秒間操作変更
-          gravityBadge.textContent = '⚠ エラー: タップで重力反転';
-          gravityBadge.classList.remove('hidden', 'active');
-          gravityBadge.classList.add('warn');
-          playGravityWarn();
-        }
-      } else {
-        controlChaosTimer -= dt;
-        if (controlChaosTimer <= 0) {
-          controlChaosMode = false;
-          controlChaosCooldown = 20 + Math.random() * 10; // 次は20〜30秒後
-          gravityBadge.classList.add('hidden');
-          gravityBadge.classList.remove('warn');
-          spawnFloater(W / 2, H / 2 - 40, "SYSTEM RESTORED", "#4caf50", 1.5);
-          beep({ freq: 800, glideTo: 1200, duration: 0.2, type: 'square', volume: 0.1 });
-          
-          // 操作が戻った時に重力が反転したままなら、すぐに元に戻るようタイマーを仕掛ける
-          if (gravityDir === -1) {
-            gravityPhaseTimer = 1.5;
-            gravityWarn = false;
-          } else {
-            gravityPhaseTimer = randRange(cfg.flipNormalDur);
-            gravityWarn = false;
-          }
-        }
-      }
-    }
-
     updateGravityFlip(dt);
 
     bird.vy += cfg.gravity * gravityDir * dt;
@@ -525,10 +466,11 @@
     spawnTimer -= dt;
     if (noSpawnTimer <= 0 && spawnTimer <= 0) {
       
+      // ② 重力の向きが変わる瞬間前後一秒は土管がないようにする
       let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
       let safeToSpawn = true;
-      if (gravityArmed && gravityPhaseTimer > 0 && !controlChaosMode) {
-        if (Math.abs(willArriveAt - gravityPhaseTimer) <= 1.2) safeToSpawn = false; 
+      if (gravityArmed && gravityPhaseTimer > 0) {
+        if (Math.abs(willArriveAt - gravityPhaseTimer) <= 1.0) safeToSpawn = false; 
       }
       
       if (safeToSpawn) {
@@ -542,6 +484,7 @@
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
       
+      // ⑤ 新しい土管（奇襲）のアニメーション進行
       if (p.isAmbush) {
         const dist = p.x - bird.x;
         if (dist < 400) {
@@ -550,6 +493,7 @@
         }
       }
 
+      // ④ 新しい土管（横スライド）の移動
       if (p.isSlideX) {
         p.baseX -= speed * dt;
         p.x = p.baseX + Math.sin(elapsed * 3.5 + p.slideXPhase) * 60; 
@@ -560,22 +504,14 @@
       if (!p.passed && p.x + PIPE_WIDTH < bird.x - bird.r) {
         p.passed = true;
         
+        // ③ 真ん中1/3を通るとコンボ
         const centerMin = p.gapY - p.gap / 6;
         const centerMax = p.gapY + p.gap / 6;
         if (bird.y > centerMin && bird.y < centerMax) {
           combo++;
           playCombo();
           triggerShake(15, 0.25); 
-
-          const comboWords = ['COOL!', 'GREAT!', 'PERFECT!', 'EXCELLENT!', 'UNSTOPPABLE!', 'GODLIKE!'];
-          const word = comboWords[Math.min(comboWords.length - 1, Math.floor(Math.max(0, combo - 1) / 2))];
-          
-          let comboColor = '#ffd166'; 
-          if (combo >= 5) comboColor = '#ff8c42'; 
-          if (combo >= 10) comboColor = '#ff6b6b';
-
-          spawnFloater(bird.x, bird.y - 40, `${word} [x${combo}]`, comboColor, 1.2 + Math.min(1.0, combo * 0.1));
-          spawnBurst(bird.x, bird.y, [comboColor, '#fff'], 15, { speed: 200, life: 0.6, size: 4, starRatio: 1 });
+          spawnFloater(bird.x, bird.y - 40, `COMBO x${combo}`, '#00f0ff', 1.2 + Math.min(0.5, combo * 0.1));
         } else {
           combo = 0; 
         }
@@ -591,9 +527,11 @@
           triggerInvertPulse('fx-invert');
           spawnShockwave(bird.x, bird.y, '#ffd166', 130, 0.5);
         }
-        if(!combo || milestone) {
-            spawnFloater(bird.x, bird.y - 20, milestone ? `+1 (x${score / 5})` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
+        
+        if (!combo) {
+          spawnFloater(bird.x, bird.y - 20, milestone ? `+1 コンボ x${score / 5}` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
         }
+        
         spawnBurst(
           bird.x, bird.y,
           milestone ? ['#ffd166', '#ff6b6b', '#4caf50', '#fff'] : ['#ffd166', '#fff8e1'],
@@ -630,6 +568,7 @@
       }
     }
 
+    // 当たり判定
     for (const p of pipes) {
       let cx = p.x;
       let cyOffset = 0;
@@ -712,9 +651,6 @@
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ab47bc';
         ctx.strokeStyle = '#7b1fa2';
-      } else if (p.isBlue) {
-        ctx.fillStyle = '#00e5ff';
-        ctx.strokeStyle = '#00b8d4';
       } else {
         ctx.fillStyle = p.moving ? '#42a5f5' : '#4caf50';
         ctx.strokeStyle = p.moving ? '#1565c0' : '#2e7d32';
@@ -733,8 +669,6 @@
         ctx.fillStyle = '#ffca28';
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ce93d8';
-      } else if (p.isBlue) {
-        ctx.fillStyle = '#84ffff';
       } else {
         ctx.fillStyle = p.moving ? '#64b5f6' : '#66bb6a';
       }
@@ -827,7 +761,7 @@
       const a = Math.max(0, f.life / f.maxLife);
       const growth = 1 + (1 - a) * 0.15;
       
-      ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px "Segoe UI", sans-serif`;
+      ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px sans-serif`;
       ctx.globalAlpha = a;
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
