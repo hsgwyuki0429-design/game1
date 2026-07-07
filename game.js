@@ -11,6 +11,16 @@
   const stage = document.getElementById('stage');
   const gravityBadge = document.getElementById('gravity-badge');
   const diffButtons = Array.from(document.querySelectorAll('.diff-btn'));
+  const overlayInner = document.getElementById('overlay-inner');
+  const menuButtons = Array.from(document.querySelectorAll('.menu-btn'));
+  const backButtons = Array.from(document.querySelectorAll('[data-back]'));
+  const subpanels = {
+    char: document.getElementById('panel-char'),
+    pipe: document.getElementById('panel-pipe'),
+    tutorial: document.getElementById('panel-tutorial'),
+  };
+  const charGrid = document.getElementById('char-grid');
+  const pipeGrid = document.getElementById('pipe-grid');
 
   const W = canvas.width;
   const H = canvas.height;
@@ -35,6 +45,34 @@
       gravityFlipScore: 2, flipArmDelay: 2.5, flipNormalDur: [4, 2], flipReversedDur: [3.5, 2],
     },
   };
+
+  // --- 選べるキャラクター（見た目のみ変化、性能は同じ） ---
+  const CHARACTERS = {
+    byte:  { name: 'バイト',   body: '#ffd166', stroke: '#c99a2e', beak: '#ff8c42', cheek: '#ffb3ba', glow: '255,209,102' },
+    robin: { name: 'コマドリ', body: '#ff6b6b', stroke: '#c1440e', beak: '#ffb300', cheek: '#ffd1d1', glow: '255,107,107' },
+    mint:  { name: 'ミント',   body: '#4dd0e1', stroke: '#00838f', beak: '#ffca28', cheek: '#b2ebf2', glow: '77,208,225'  },
+    grape: { name: 'グレープ', body: '#ba68c8', stroke: '#6a1b9a', beak: '#ffd166', cheek: '#e1bee7', glow: '186,104,200' },
+    leaf:  { name: 'リーフ',   body: '#81c784', stroke: '#2e7d32', beak: '#ff8c42', cheek: '#c8e6c9', glow: '129,199,132' },
+    snow:  { name: 'スノウ',   body: '#eceff1', stroke: '#90a4ae', beak: '#ffb300', cheek: '#ffd1d1', glow: '236,239,241' },
+  };
+
+  // --- 選べる土管デザイン（通常・動く土管の色を変更） ---
+  const PIPE_SKINS = {
+    classic: { name: 'クラシック', fill: '#4caf50', stroke: '#2e7d32', cap: '#66bb6a', mFill: '#42a5f5', mStroke: '#1565c0', mCap: '#64b5f6' },
+    candy:   { name: 'キャンディ', fill: '#ff8fab', stroke: '#c9184a', cap: '#ffb3c6', mFill: '#ffca3a', mStroke: '#e09f00', mCap: '#ffe08a' },
+    steel:   { name: 'スチール',   fill: '#90a4ae', stroke: '#455a64', cap: '#cfd8dc', mFill: '#78909c', mStroke: '#37474f', mCap: '#b0bec5' },
+    sunset:  { name: 'サンセット', fill: '#ff7043', stroke: '#bf360c', cap: '#ffab91', mFill: '#ab47bc', mStroke: '#6a1b9a', mCap: '#ce93d8' },
+    ocean:   { name: 'オーシャン', fill: '#26c6da', stroke: '#00838f', cap: '#80deea', mFill: '#5c6bc0', mStroke: '#283593', mCap: '#9fa8da' },
+    forest:  { name: 'フォレスト', fill: '#2e7d32', stroke: '#1b5e20', cap: '#66bb6a', mFill: '#8d6e63', mStroke: '#4e342e', mCap: '#bcaaa4' },
+  };
+
+  let character = localStorage.getItem('flappy-byte-character') || 'byte';
+  if (!CHARACTERS[character]) character = 'byte';
+  let charCfg = CHARACTERS[character];
+
+  let pipeSkinKey = localStorage.getItem('flappy-byte-pipeskin') || 'classic';
+  if (!PIPE_SKINS[pipeSkinKey]) pipeSkinKey = 'classic';
+  let pipeSkin = PIPE_SKINS[pipeSkinKey];
 
   const STORAGE_KEY = 'flappy-byte-best';
   let difficulty = localStorage.getItem('flappy-byte-difficulty') || 'normal';
@@ -65,6 +103,92 @@
   });
   selectDifficulty(difficulty);
 
+  // --- サブパネル（キャラ選択 / 土管デザイン / 遊び方）の開閉 ---
+  function openPanel(name) {
+    overlayInner.classList.add('hidden');
+    Object.entries(subpanels).forEach(([k, el]) => el.classList.toggle('hidden', k !== name));
+  }
+  function closePanels() {
+    overlayInner.classList.remove('hidden');
+    Object.values(subpanels).forEach(el => el.classList.add('hidden'));
+  }
+  menuButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPanel(btn.dataset.panel);
+    });
+  });
+  backButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closePanels();
+    });
+  });
+
+  // キャラ選択カードを生成
+  function buildCharGrid() {
+    charGrid.innerHTML = '';
+    Object.entries(CHARACTERS).forEach(([key, c]) => {
+      const card = document.createElement('button');
+      card.className = 'option-card' + (key === character ? ' active' : '');
+      card.dataset.char = key;
+      const cv = document.createElement('canvas');
+      cv.width = 52; cv.height = 52; cv.className = 'swatch';
+      drawBirdSwatch(cv.getContext('2d'), c, 26, 26, 15);
+      const name = document.createElement('span');
+      name.className = 'option-name';
+      name.textContent = c.name;
+      card.appendChild(cv);
+      card.appendChild(name);
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectCharacter(key);
+      });
+      charGrid.appendChild(card);
+    });
+  }
+  function selectCharacter(key) {
+    character = key;
+    charCfg = CHARACTERS[key];
+    localStorage.setItem('flappy-byte-character', key);
+    Array.from(charGrid.children).forEach(card => card.classList.toggle('active', card.dataset.char === key));
+    playFlap();
+  }
+
+  // 土管デザインカードを生成
+  function buildPipeGrid() {
+    pipeGrid.innerHTML = '';
+    Object.entries(PIPE_SKINS).forEach(([key, s]) => {
+      const card = document.createElement('button');
+      card.className = 'option-card' + (key === pipeSkinKey ? ' active' : '');
+      card.dataset.pipe = key;
+      const sw = document.createElement('div');
+      sw.className = 'pipe-swatch';
+      sw.style.background = `linear-gradient(${s.fill} 0 70%, ${s.cap} 70% 100%)`;
+      sw.style.border = `2px solid ${s.stroke}`;
+      const name = document.createElement('span');
+      name.className = 'option-name';
+      name.textContent = s.name;
+      card.appendChild(sw);
+      card.appendChild(name);
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectPipeSkin(key);
+      });
+      pipeGrid.appendChild(card);
+    });
+  }
+  function selectPipeSkin(key) {
+    pipeSkinKey = key;
+    pipeSkin = PIPE_SKINS[key];
+    localStorage.setItem('flappy-byte-pipeskin', key);
+    Array.from(pipeGrid.children).forEach(card => card.classList.toggle('active', card.dataset.pipe === key));
+    playScore(false);
+  }
+
+  buildCharGrid();
+  buildPipeGrid();
+
   let state = 'ready';
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
@@ -75,6 +199,9 @@
 
   const GRAVITY_WARN_LEAD = 1;
   const GRAVITY_CLEAR_AFTER = 2.5;
+  // 重力反転中のゆるめ係数（重力と横スクロール速度を弱める）
+  const GRAVITY_REVERSED_GRAV_MUL = 0.72;
+  const GRAVITY_REVERSED_SPEED_MUL = 0.8;
 
   function initClouds() {
     clouds = [];
@@ -128,17 +255,56 @@
   }
 
   // --- audio (synthesized, no external assets) ---
+  // やわらかく心地よい響きにするため、全体を「ローパス＋軽いリバーブ」の
+  // マスターチェーンに通し、各音は角の立たないsine/triangle中心＆
+  // なめらかなフェードで鳴らす。
   let audioCtx = null;
+  let masterGain = null;
+  let masterFilter = null;
+  let reverbGain = null;
+
+  function buildReverbImpulse(ctxA, seconds = 1.6, decay = 3.2) {
+    const rate = ctxA.sampleRate;
+    const len = Math.floor(rate * seconds);
+    const buffer = ctxA.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buffer;
+  }
+
   function getAudioCtx() {
     if (!audioCtx) {
       const AudioCtor = window.AudioContext || window.webkitAudioContext;
       audioCtx = AudioCtor ? new AudioCtor() : null;
+      if (audioCtx) {
+        // やさしいトーンにするマスターローパス
+        masterFilter = audioCtx.createBiquadFilter();
+        masterFilter.type = 'lowpass';
+        masterFilter.frequency.value = 3800;
+        masterFilter.Q.value = 0.4;
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.85;
+        masterFilter.connect(masterGain).connect(audioCtx.destination);
+        // ほんのり響きを足す軽いリバーブ
+        try {
+          const convolver = audioCtx.createConvolver();
+          convolver.buffer = buildReverbImpulse(audioCtx);
+          reverbGain = audioCtx.createGain();
+          reverbGain.gain.value = 0.18;
+          masterGain.connect(convolver).connect(reverbGain).connect(audioCtx.destination);
+        } catch (e) { /* リバーブ非対応環境は素通し */ }
+      }
     }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
   }
 
-  function beep({ freq = 440, duration = 0.1, type = 'sine', volume = 0.2, glideTo = null, delay = 0 }) {
+  // なめらかなアタック/リリース付きの単音
+  function tone({ freq = 440, duration = 0.1, type = 'sine', volume = 0.2, glideTo = null, delay = 0, attack = 0.012 }) {
     const ctxA = getAudioCtx();
     if (!ctxA) return;
     const t0 = ctxA.currentTime + delay;
@@ -147,40 +313,61 @@
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
     if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + duration);
-    gain.gain.setValueAtTime(volume, t0);
-    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
-    osc.connect(gain).connect(ctxA.destination);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(volume, t0 + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(gain).connect(masterFilter || ctxA.destination);
     osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+    osc.stop(t0 + duration + 0.03);
+  }
+
+  // 基音＋やわらかい倍音を重ねて丸い音色に
+  function beep(opts) {
+    tone(opts);
+    if (opts.rich !== false && opts.type !== 'sine') {
+      tone({ ...opts, type: 'sine', volume: (opts.volume || 0.2) * 0.5, rich: false });
+    }
   }
 
   function playFlap() {
-    beep({ freq: 480, glideTo: 720, duration: 0.08, type: 'square', volume: 0.1 });
+    tone({ freq: 420, glideTo: 640, duration: 0.11, type: 'sine', volume: 0.14, attack: 0.006 });
+    tone({ freq: 840, glideTo: 1280, duration: 0.08, type: 'triangle', volume: 0.05, attack: 0.004 });
   }
   function playScore(milestone) {
-    beep({ freq: 880, duration: 0.09, type: 'triangle', volume: 0.18 });
-    beep({ freq: 1175, duration: 0.12, type: 'triangle', volume: 0.16, delay: 0.06 });
+    // 気持ちのよいベル（メジャー系）
+    tone({ freq: 784, duration: 0.16, type: 'triangle', volume: 0.16 }); // G5
+    tone({ freq: 1175, duration: 0.2, type: 'sine', volume: 0.11, delay: 0.05 }); // D6
     if (milestone) {
-      beep({ freq: 1568, duration: 0.16, type: 'triangle', volume: 0.16, delay: 0.14 });
+      tone({ freq: 1568, duration: 0.28, type: 'triangle', volume: 0.13, delay: 0.11 }); // G6
+      tone({ freq: 2349, duration: 0.28, type: 'sine', volume: 0.06, delay: 0.11 });
     }
   }
   function playCombo() {
-    beep({ freq: 1200, glideTo: 1800, duration: 0.1, type: 'square', volume: 0.15 });
-    beep({ freq: 1600, glideTo: 2400, duration: 0.15, type: 'square', volume: 0.15, delay: 0.1 });
+    // 上昇するペンタトニックのきらめき
+    [659, 880, 1174, 1568].forEach((f, i) => {
+      tone({ freq: f, duration: 0.16, type: 'triangle', volume: 0.12, delay: i * 0.055 });
+      tone({ freq: f * 2, duration: 0.12, type: 'sine', volume: 0.04, delay: i * 0.055 });
+    });
   }
   function playHit() {
-    beep({ freq: 160, glideTo: 55, duration: 0.28, type: 'sawtooth', volume: 0.2 });
+    // 角の立たない、やわらかな着地の低音
+    tone({ freq: 300, glideTo: 90, duration: 0.34, type: 'sine', volume: 0.22, attack: 0.004 });
+    tone({ freq: 150, glideTo: 60, duration: 0.4, type: 'triangle', volume: 0.1, attack: 0.006 });
   }
   function playGravityWarn() {
-    beep({ freq: 500, glideTo: 900, duration: 0.12, type: 'square', volume: 0.12 });
-    beep({ freq: 500, glideTo: 900, duration: 0.12, type: 'square', volume: 0.12, delay: 0.18 });
+    tone({ freq: 660, duration: 0.16, type: 'sine', volume: 0.12 });
+    tone({ freq: 660, duration: 0.16, type: 'sine', volume: 0.12, delay: 0.2 });
   }
   function playGravityFlip(reversed) {
-    beep({ freq: reversed ? 900 : 300, glideTo: reversed ? 220 : 850, duration: 0.35, type: 'sawtooth', volume: 0.18 });
+    // 反転＝上昇、復帰＝下降のなめらかなスウィープ
+    tone({ freq: reversed ? 440 : 880, glideTo: reversed ? 880 : 440, duration: 0.4, type: 'sine', volume: 0.16, attack: 0.02 });
+    tone({ freq: reversed ? 660 : 1320, glideTo: reversed ? 1320 : 660, duration: 0.4, type: 'triangle', volume: 0.06, attack: 0.02 });
   }
   function playBest() {
-    [660, 880, 1108, 1320].forEach((freq, i) => {
-      beep({ freq, duration: 0.16, type: 'triangle', volume: 0.16, delay: i * 0.09 });
+    // 明るいメジャーのアルペジオ・ファンファーレ
+    [523, 659, 784, 1047, 1319].forEach((freq, i) => {
+      tone({ freq, duration: 0.26, type: 'triangle', volume: 0.14, delay: i * 0.1 });
+      tone({ freq: freq * 1.5, duration: 0.22, type: 'sine', volume: 0.05, delay: i * 0.1 + 0.02 });
     });
   }
 
@@ -481,6 +668,8 @@
 
     elapsed += dt;
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
+    // 重力反転中はむずかしくなりすぎるので、進む速度を少しゆるめて反応する余裕を持たせる
+    if (gravityDir === -1) speed *= GRAVITY_REVERSED_SPEED_MUL;
     groundOffset = (groundOffset + speed * dt) % 40;
 
     // 鬼モードの操作変更タイムイベントの管理
@@ -519,7 +708,9 @@
 
     updateGravityFlip(dt);
 
-    bird.vy += cfg.gravity * gravityDir * dt;
+    // 重力反転中は重力を少し弱めて、操作しやすくする
+    const gravMul = gravityDir === -1 ? GRAVITY_REVERSED_GRAV_MUL : 1;
+    bird.vy += cfg.gravity * gravityDir * gravMul * dt;
     bird.y += bird.vy * dt;
     bird.rot = Math.max(-0.5, Math.min(1.2, (bird.vy / 600) * gravityDir));
 
@@ -728,8 +919,9 @@
         ctx.fillStyle = '#00e5ff';
         ctx.strokeStyle = '#00b8d4';
       } else {
-        ctx.fillStyle = p.moving ? '#42a5f5' : '#4caf50';
-        ctx.strokeStyle = p.moving ? '#1565c0' : '#2e7d32';
+        // 選択中の土管デザインを反映（通常/動く土管）
+        ctx.fillStyle = p.moving ? pipeSkin.mFill : pipeSkin.fill;
+        ctx.strokeStyle = p.moving ? pipeSkin.mStroke : pipeSkin.stroke;
       }
       ctx.lineWidth = 3;
 
@@ -748,7 +940,7 @@
       } else if (p.isBlue) {
         ctx.fillStyle = '#84ffff'; // 青い土管のハイライト
       } else {
-        ctx.fillStyle = p.moving ? '#64b5f6' : '#66bb6a';
+        ctx.fillStyle = p.moving ? pipeSkin.mCap : pipeSkin.cap;
       }
 
       ctx.fillRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
@@ -771,21 +963,43 @@
   }
 
   function drawShockwaves() {
+    ctx.globalCompositeOperation = 'lighter';
     for (const s of shockwaves) {
       const t = 1 - s.life / s.maxLife;
-      const r = s.maxR * t;
+      const ease = 1 - Math.pow(1 - t, 3); // やわらかく広がる
+      const r = s.maxR * ease;
       const a = Math.max(0, 1 - t);
       ctx.strokeStyle = s.color;
+      // メインの輪
       ctx.lineWidth = 4 * (1 - t) + 1;
-      ctx.globalAlpha = a * 0.8;
+      ctx.globalAlpha = a * 0.7;
       ctx.beginPath();
       ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
       ctx.stroke();
+      // 内側のやわらかいエコー
+      ctx.lineWidth = 2 * (1 - t) + 0.5;
+      ctx.globalAlpha = a * 0.35;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
     }
+    ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
   }
 
   function drawParticles() {
+    // やわらかいブルーム層（加算合成で光が滲むような気持ちよさ）
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of particles) {
+      const a = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = a * 0.35;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * 2.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
     for (const p of particles) {
       const a = Math.max(0, p.life / p.maxLife);
       ctx.globalAlpha = a;
@@ -807,14 +1021,21 @@
   }
 
   function drawTrail() {
-    for (const t of trail) {
-      const a = Math.max(0, t.life / t.maxLife) * 0.3;
+    // キャラ色のなめらかな光の尾（加算合成でやさしく発光）
+    ctx.globalCompositeOperation = 'lighter';
+    const n = trail.length;
+    for (let i = 0; i < n; i++) {
+      const t = trail[i];
+      const life = Math.max(0, t.life / t.maxLife);
+      const grow = (i / n); // 新しいほど太く
+      const a = life * 0.28;
       ctx.globalAlpha = a;
-      ctx.fillStyle = '#ffd166';
+      ctx.fillStyle = `rgba(${charCfg.glow}, 1)`;
       ctx.beginPath();
-      ctx.arc(t.x, t.y, bird.r * 0.7, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, bird.r * (0.35 + grow * 0.55), 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
   }
 
@@ -822,11 +1043,12 @@
     const pulse = 0.5 + Math.sin(bgTime * 6) * 0.5;
     const tier = Math.min(4, Math.floor(score / 5));
     if (tier <= 0) return;
+    const g = charCfg.glow;
     const radius = bird.r * (2.2 + tier * 0.5);
     const grd = ctx.createRadialGradient(bird.x, bird.y, bird.r * 0.5, bird.x, bird.y, radius);
     const alpha = (0.12 + tier * 0.05) * (0.7 + pulse * 0.3);
-    grd.addColorStop(0, `rgba(255, 209, 102, ${alpha})`);
-    grd.addColorStop(1, 'rgba(255, 209, 102, 0)');
+    grd.addColorStop(0, `rgba(${g}, ${alpha})`);
+    grd.addColorStop(1, `rgba(${g}, 0)`);
     ctx.fillStyle = grd;
     ctx.beginPath();
     ctx.arc(bird.x, bird.y, radius, 0, Math.PI * 2);
@@ -849,34 +1071,85 @@
     ctx.textAlign = 'left';
   }
 
+  // 選択中キャラの見た目で鳥を描く（本体スケール後の座標系で呼ぶ）
+  function paintBird(c, r) {
+    ctx.fillStyle = c.body;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = c.stroke;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // ほっぺ
+    ctx.fillStyle = c.cheek;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(-r * 0.15, r * 0.28, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // 白目
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(r * 0.36, -r * 0.28, r * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    // 黒目
+    ctx.fillStyle = '#3a2b00';
+    ctx.beginPath();
+    ctx.arc(r * 0.46, -r * 0.28, r * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    // くちばし
+    ctx.fillStyle = c.beak;
+    ctx.beginPath();
+    ctx.moveTo(r - 2, 0);
+    ctx.lineTo(r + 10, 3);
+    ctx.lineTo(r - 2, 7);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   function drawBird() {
     ctx.save();
     ctx.translate(bird.x, bird.y);
     ctx.rotate(bird.rot * gravityDir);
     ctx.scale(1 / Math.sqrt(squash), (Math.sqrt(squash)) * gravityDir);
-    ctx.fillStyle = '#ffd166';
-    ctx.beginPath();
-    ctx.arc(0, 0, bird.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#c99a2e';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(5, -4, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#3a2b00';
-    ctx.beginPath();
-    ctx.arc(6.5, -4, 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ff8c42';
-    ctx.beginPath();
-    ctx.moveTo(bird.r - 2, 0);
-    ctx.lineTo(bird.r + 10, 3);
-    ctx.lineTo(bird.r - 2, 7);
-    ctx.closePath();
-    ctx.fill();
+    paintBird(charCfg, bird.r);
     ctx.restore();
+  }
+
+  // 選択画面用の小さな鳥アイコン
+  function drawBirdSwatch(c2, cfg2, cx, cy, r) {
+    c2.save();
+    c2.clearRect(0, 0, cx * 2, cy * 2);
+    c2.translate(cx, cy);
+    c2.fillStyle = cfg2.body;
+    c2.beginPath();
+    c2.arc(0, 0, r, 0, Math.PI * 2);
+    c2.fill();
+    c2.strokeStyle = cfg2.stroke;
+    c2.lineWidth = 2;
+    c2.stroke();
+    c2.fillStyle = cfg2.cheek;
+    c2.globalAlpha = 0.7;
+    c2.beginPath();
+    c2.arc(-r * 0.15, r * 0.28, r * 0.22, 0, Math.PI * 2);
+    c2.fill();
+    c2.globalAlpha = 1;
+    c2.fillStyle = '#fff';
+    c2.beginPath();
+    c2.arc(r * 0.36, -r * 0.28, r * 0.32, 0, Math.PI * 2);
+    c2.fill();
+    c2.fillStyle = '#3a2b00';
+    c2.beginPath();
+    c2.arc(r * 0.46, -r * 0.28, r * 0.14, 0, Math.PI * 2);
+    c2.fill();
+    c2.fillStyle = cfg2.beak;
+    c2.beginPath();
+    c2.moveTo(r - 2, 0);
+    c2.lineTo(r + 9, 3);
+    c2.lineTo(r - 2, 6);
+    c2.closePath();
+    c2.fill();
+    c2.restore();
   }
 
   function draw() {

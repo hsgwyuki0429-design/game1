@@ -14,7 +14,8 @@
     </div>
     <div id="gravity-badge" class="hidden"></div>
     <div id="overlay">
-      <div id="overlay-inner">
+      <!-- メインメニュー -->
+      <div id="overlay-inner" class="panel">
         <h1 id="overlay-title">Flappy Byte</h1>
         <p id="new-best-line" class="hidden">🎉 自己ベスト更新!</p>
         <div id="diff-select">
@@ -25,6 +26,38 @@
         <p id="overlay-sub">タップ / クリック / スペースキーで羽ばたく</p>
         <p id="best-line">ベスト: <span id="best">0</span></p>
         <button id="start-btn">スタート</button>
+        <div id="menu-btns">
+          <button class="menu-btn" data-panel="char">🐤 キャラ選択</button>
+          <button class="menu-btn" data-panel="pipe">🟩 土管デザイン</button>
+          <button class="menu-btn" data-panel="tutorial">📖 遊び方</button>
+        </div>
+      </div>
+
+      <!-- キャラ選択 -->
+      <div id="panel-char" class="subpanel hidden">
+        <h2 class="subpanel-title">キャラ選択</h2>
+        <div id="char-grid" class="option-grid"></div>
+        <button class="back-btn" data-back>← もどる</button>
+      </div>
+
+      <!-- 土管デザイン選択 -->
+      <div id="panel-pipe" class="subpanel hidden">
+        <h2 class="subpanel-title">土管デザイン</h2>
+        <div id="pipe-grid" class="option-grid"></div>
+        <button class="back-btn" data-back>← もどる</button>
+      </div>
+
+      <!-- チュートリアル -->
+      <div id="panel-tutorial" class="subpanel hidden">
+        <h2 class="subpanel-title">遊び方</h2>
+        <div id="tutorial-body">
+          <p><b>🕹 操作</b><br>タップ / クリック / スペースキーで羽ばたきます。押すたびに上へジャンプ。</p>
+          <p><b>🎯 目的</b><br>土管のすき間を通り抜けてスコアを稼ごう。地面や土管に当たるとゲームオーバー。</p>
+          <p><b>✨ コンボ</b><br>すき間の<b>まん中</b>を通ると <b>COMBO</b>! 連続で決めるとボーナス演出。</p>
+          <p><b>🟦 動く土管 / 🟪 スライド / 🟧 奇襲</b><br>スコアが上がると土管が動いたり飛び出したり。よく見て対応しよう。</p>
+          <p><b>🙃 重力反転</b><br>ハード・鬼では途中で重力が反転! バッジの警告が出たら準備を。反転中は少しゆっくりになります。</p>
+        </div>
+        <button class="back-btn" data-back>← もどる</button>
       </div>
     </div>
   </div>
