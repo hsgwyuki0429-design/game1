@@ -220,7 +220,6 @@
     }
   }
 
-  // 引数にisComboを追加
   function spawnFloater(x, y, text, color, scale = 1, isCombo = false) {
     floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8, scale, isCombo });
   }
@@ -306,8 +305,8 @@
     const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
     let ambushDir = Math.random() < 0.5 ? 'bottom' : 'side';
 
-    // ⑥ 重力反転中の土管は青くなる
-    const isBlue = (gravityDir === -1);
+    // ノーマルモード以外でのみ重力反転中に青い土管になる
+    const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
 
     let baseGapY = margin + Math.random() * span + gap / 2;
 
@@ -430,10 +429,8 @@
       
       const level = Math.floor(score / 5);
       if (gravityDir === -1) {
-        // 反転中はレベルが高いほど長く続く
         gravityPhaseTimer = randRange(cfg.flipReversedDur) + level * 0.8;
       } else {
-        // 通常中はレベルが高いほど早く切り替わる（短くなる）
         gravityPhaseTimer = Math.max(1.5, randRange(cfg.flipNormalDur) - level * 0.6);
       }
       
@@ -514,14 +511,14 @@
           playCombo();
           triggerShake(15, 0.25); 
 
-          // コンボ演出の強化
           const comboWords = ['COOL!', 'GREAT!', 'PERFECT!', 'EXCELLENT!', 'UNSTOPPABLE!', 'GODLIKE!'];
           const word = comboWords[Math.min(comboWords.length - 1, Math.floor((combo - 1) / 2))];
           
-          let comboColor = '#00e5ff'; // Cyan
-          if (combo >= 10) comboColor = '#ff1744'; // Neon Red
-          else if (combo >= 5) comboColor = '#d500f9'; // Neon Purple/Magenta
-          else if (combo >= 3) comboColor = '#76ff03'; // Neon Green
+          // テロップ（テキスト）の色を淡いパステル調に変更
+          let comboColor = '#b3e5fc'; // 淡いブルー
+          if (combo >= 10) comboColor = '#ffcdd2'; // 淡いピンク
+          else if (combo >= 5) comboColor = '#e1bee7'; // 淡いパープル
+          else if (combo >= 3) comboColor = '#c8e6c9'; // 淡いグリーン
 
           spawnFloater(bird.x, bird.y - 40, `${word} [x${combo}]`, comboColor, 1.2 + Math.min(1.5, combo * 0.1), true);
           spawnBurst(bird.x, bird.y, [comboColor, '#fff'], 15, { speed: 200, life: 0.6, size: 4, starRatio: 1 });
@@ -655,7 +652,6 @@
       const topH = p.gapY - p.gap / 2 + renderOffsetY;
       const botY = p.gapY + p.gap / 2 + renderOffsetY;
 
-      // 青い土管のカラーリングを追加
       if (p.isAmbush) {
         ctx.fillStyle = '#ffb300';
         ctx.strokeStyle = '#ff8f00';
@@ -663,7 +659,7 @@
         ctx.fillStyle = '#ab47bc';
         ctx.strokeStyle = '#7b1fa2';
       } else if (p.isBlue) {
-        ctx.fillStyle = '#00e5ff'; // 蛍光シアン
+        ctx.fillStyle = '#00e5ff';
         ctx.strokeStyle = '#00b8d4';
       } else {
         ctx.fillStyle = p.moving ? '#42a5f5' : '#4caf50';
@@ -684,7 +680,7 @@
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ce93d8';
       } else if (p.isBlue) {
-        ctx.fillStyle = '#84ffff'; // 蛍光シアンハイライト
+        ctx.fillStyle = '#84ffff';
       } else {
         ctx.fillStyle = p.moving ? '#64b5f6' : '#66bb6a';
       }
@@ -777,7 +773,6 @@
       const a = Math.max(0, f.life / f.maxLife);
       const growth = 1 + (1 - a) * (f.isCombo ? 0.3 : 0.15);
       
-      // コンボ時は太字イタリック＋黒のアウトラインで派手に演出
       if (f.isCombo) {
         ctx.font = `italic 900 ${Math.round(22 * (f.scale || 1) * growth)}px "Segoe UI", sans-serif`;
         ctx.globalAlpha = a;
@@ -883,5 +878,3 @@
     flap();
   });
 })();
-
-
