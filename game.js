@@ -1,3 +1,4 @@
+```javascript
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -22,12 +23,12 @@
     normal: {
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
       movingPipeScore: 6, movingChance: 0.3, moveAmp: 40, moveSpeed: 1.1,
-      gravityFlipScore: 12, flipArmDelay: 5, flipNormalDur: [7, 4], flipReversedDur: [3, 1.5],
+      gravityFlipScore: 5, flipArmDelay: 5, flipNormalDur: [7, 4], flipReversedDur: [3, 1.5],
     },
     hard: {
       label: 'ハード', gravity: 1680, flap: -450, gapBase: 145, gapMin: 105, baseSpeed: 205,
       movingPipeScore: 3, movingChance: 0.45, moveAmp: 52, moveSpeed: 1.5,
-      gravityFlipScore: 6, flipArmDelay: 3.5, flipNormalDur: [5.5, 3], flipReversedDur: [3.2, 1.8],
+      gravityFlipScore: 4, flipArmDelay: 3.5, flipNormalDur: [5.5, 3], flipReversedDur: [3.2, 1.8],
     },
     insane: {
       label: '鬼', gravity: 1850, flap: -470, gapBase: 128, gapMin: 95, baseSpeed: 228,
@@ -65,7 +66,6 @@
   });
   selectDifficulty(difficulty);
 
-  // コンボ変数を追加
   let state = 'ready';
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
@@ -90,7 +90,7 @@
     bird = { x: 90, y: H / 2, r: 14, vy: 0, rot: 0 };
     pipes = [];
     score = 0;
-    combo = 0; // コンボ初期化
+    combo = 0;
     elapsed = 0;
     speed = cfg.baseSpeed;
     spawnTimer = 0;
@@ -156,7 +156,6 @@
       beep({ freq: 1568, duration: 0.16, type: 'triangle', volume: 0.16, delay: 0.14 });
     }
   }
-  // コンボ用の高い効果音
   function playCombo() {
     beep({ freq: 1200, glideTo: 1800, duration: 0.1, type: 'square', volume: 0.15 });
     beep({ freq: 1600, glideTo: 2400, duration: 0.15, type: 'square', volume: 0.15, delay: 0.1 });
@@ -222,8 +221,9 @@
     }
   }
 
-  function spawnFloater(x, y, text, color, scale = 1) {
-    floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8, scale });
+  // 引数にisComboを追加
+  function spawnFloater(x, y, text, color, scale = 1, isCombo = false) {
+    floaters.push({ x, y, text, color, life: 0.8, maxLife: 0.8, scale, isCombo });
   }
 
   function triggerShake(mag, duration) {
@@ -303,25 +303,25 @@
     const margin = 40 + moveAmp;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
     
-    // ④ 新しい土管: スライド
     const isSlideX = score >= 8 && Math.random() < 0.2;
-    // ⑤ 新しい土管: 奇襲 (上、中、下のいずれかに固定)
     const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
     let ambushDir = Math.random() < 0.5 ? 'bottom' : 'side';
 
+    // ⑥ 重力反転中の土管は青くなる
+    const isBlue = (gravityDir === -1);
+
     let baseGapY = margin + Math.random() * span + gap / 2;
 
-    // 奇襲土管の穴の位置を固定化
     if (isAmbush) {
        const r = Math.random();
-       if (r < 0.33) baseGapY = margin + gap / 2; // 上
-       else if (r < 0.66) baseGapY = H / 2; // 真ん中
-       else baseGapY = H - GROUND_H - margin - gap / 2; // 下
+       if (r < 0.33) baseGapY = margin + gap / 2; 
+       else if (r < 0.66) baseGapY = H / 2; 
+       else baseGapY = H - GROUND_H - margin - gap / 2; 
     }
 
     pipes.push({
       x: W + PIPE_WIDTH,
-      baseX: W + PIPE_WIDTH, // スライド用基準位置
+      baseX: W + PIPE_WIDTH, 
       gapY: baseGapY,
       baseGapY,
       gap,
@@ -334,7 +334,8 @@
       slideXPhase: Math.random() * Math.PI * 2,
       isAmbush,
       ambushDir,
-      ambushT: 0, // 奇襲アニメーションの進行度
+      ambushT: 0, 
+      isBlue,
     });
   }
 
@@ -428,13 +429,15 @@
       gravityDir *= -1;
       gravityWarn = false;
       
-      // ① レベルが高くなるほど反転時間を増やす
-      const levelBonus = Math.floor(score / 5) * 1.0; 
-      gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
+      const level = Math.floor(score / 5);
+      if (gravityDir === -1) {
+        // 反転中はレベルが高いほど長く続く
+        gravityPhaseTimer = randRange(cfg.flipReversedDur) + level * 0.8;
+      } else {
+        // 通常中はレベルが高いほど早く切り替わる（短くなる）
+        gravityPhaseTimer = Math.max(1.5, randRange(cfg.flipNormalDur) - level * 0.6);
+      }
       
-      // ① 土管を消去する処理を削除し、反転中も残るように変更
-      // pipes = pipes.filter(p => p.passed); <- 削除
-
       triggerFlash(gravityDir === -1 ? '186,104,200' : '255,255,255', 0.3);
       triggerShake(10, 0.3);
       triggerPunch(0.1);
@@ -470,11 +473,9 @@
     spawnTimer -= dt;
     if (noSpawnTimer <= 0 && spawnTimer <= 0) {
       
-      // ② 重力が変わる瞬間前後1秒間は土管が配置されないようにする
       let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
       let safeToSpawn = true;
       if (gravityArmed && gravityPhaseTimer > 0) {
-        // 到着タイミングと反転タイミングの差が約1.2秒以内の場合は生成をスキップ
         if (Math.abs(willArriveAt - gravityPhaseTimer) <= 1.2) safeToSpawn = false; 
       }
       
@@ -489,7 +490,6 @@
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
       
-      // ⑤ 奇襲土管のアニメーション進行
       if (p.isAmbush) {
         const dist = p.x - bird.x;
         if (dist < 400) {
@@ -498,10 +498,9 @@
         }
       }
 
-      // ④ 横にスライドする土管の移動
       if (p.isSlideX) {
         p.baseX -= speed * dt;
-        p.x = p.baseX + Math.sin(elapsed * 3.5 + p.slideXPhase) * 60; // 60px幅で前後に揺れる
+        p.x = p.baseX + Math.sin(elapsed * 3.5 + p.slideXPhase) * 60; 
       } else {
         p.x -= speed * dt;
       }
@@ -509,17 +508,26 @@
       if (!p.passed && p.x + PIPE_WIDTH < bird.x - bird.r) {
         p.passed = true;
         
-        // ③ コンボ判定（真ん中1/3を通過したか）
         const centerMin = p.gapY - p.gap / 6;
         const centerMax = p.gapY + p.gap / 6;
         if (bird.y > centerMin && bird.y < centerMax) {
           combo++;
-          playCombo(); // 高い効果音
-          triggerShake(15, 0.25); // シェイク
-          spawnFloater(bird.x, bird.y - 40, `COMBO x${combo}!`, '#00f0ff', 1.2 + Math.min(1, combo * 0.1));
-          spawnBurst(bird.x, bird.y, ['#00f0ff', '#fff'], 15, { speed: 200, life: 0.6, size: 4, starRatio: 1 });
+          playCombo();
+          triggerShake(15, 0.25); 
+
+          // コンボ演出の強化
+          const comboWords = ['COOL!', 'GREAT!', 'PERFECT!', 'EXCELLENT!', 'UNSTOPPABLE!', 'GODLIKE!'];
+          const word = comboWords[Math.min(comboWords.length - 1, Math.floor((combo - 1) / 2))];
+          
+          let comboColor = '#00e5ff'; // Cyan
+          if (combo >= 10) comboColor = '#ff1744'; // Neon Red
+          else if (combo >= 5) comboColor = '#d500f9'; // Neon Purple/Magenta
+          else if (combo >= 3) comboColor = '#76ff03'; // Neon Green
+
+          spawnFloater(bird.x, bird.y - 40, `${word} [x${combo}]`, comboColor, 1.2 + Math.min(1.5, combo * 0.1), true);
+          spawnBurst(bird.x, bird.y, [comboColor, '#fff'], 15, { speed: 200, life: 0.6, size: 4, starRatio: 1 });
         } else {
-          combo = 0; // 外れたらコンボリセット
+          combo = 0; 
         }
 
         score++;
@@ -534,7 +542,7 @@
           spawnShockwave(bird.x, bird.y, '#ffd166', 130, 0.5);
         }
         if(!combo || milestone) {
-            spawnFloater(bird.x, bird.y - 20, milestone ? `+1 (x${score / 5})` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
+            spawnFloater(bird.x, bird.y - 20, milestone ? `+1 (x${score / 5})` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1, false);
         }
         spawnBurst(
           bird.x, bird.y,
@@ -572,12 +580,11 @@
       }
     }
 
-    // 当たり判定のチェック（奇襲土管のビジュアル上のズレも考慮して物理演算に適用）
     for (const p of pipes) {
       let cx = p.x;
       let cyOffset = 0;
       if (p.isAmbush) {
-         const ease = 1 - Math.pow(1 - p.ambushT, 4); // 鋭く出現させるイージング
+         const ease = 1 - Math.pow(1 - p.ambushT, 4); 
          if (p.ambushDir === 'bottom') cyOffset = (1 - ease) * H;
          else cx = p.x + (1 - ease) * W;
       }
@@ -640,7 +647,6 @@
       let renderX = p.x;
       let renderOffsetY = 0;
       
-      // 奇襲土管のビジュアル上のオフセット
       if (p.isAmbush) {
          const ease = 1 - Math.pow(1 - p.ambushT, 4);
          if (p.ambushDir === 'bottom') renderOffsetY = (1 - ease) * H;
@@ -650,20 +656,22 @@
       const topH = p.gapY - p.gap / 2 + renderOffsetY;
       const botY = p.gapY + p.gap / 2 + renderOffsetY;
 
-      // 新しい土管のカラーリング
+      // 青い土管のカラーリングを追加
       if (p.isAmbush) {
         ctx.fillStyle = '#ffb300';
         ctx.strokeStyle = '#ff8f00';
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ab47bc';
         ctx.strokeStyle = '#7b1fa2';
+      } else if (p.isBlue) {
+        ctx.fillStyle = '#00e5ff'; // 蛍光シアン
+        ctx.strokeStyle = '#00b8d4';
       } else {
         ctx.fillStyle = p.moving ? '#42a5f5' : '#4caf50';
         ctx.strokeStyle = p.moving ? '#1565c0' : '#2e7d32';
       }
       ctx.lineWidth = 3;
 
-      // 安全に描画するための高さ補正
       const topHeight = Math.max(0, topH);
       const bottomHeight = Math.max(0, H - GROUND_H - botY);
 
@@ -676,6 +684,8 @@
         ctx.fillStyle = '#ffca28';
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ce93d8';
+      } else if (p.isBlue) {
+        ctx.fillStyle = '#84ffff'; // 蛍光シアンハイライト
       } else {
         ctx.fillStyle = p.moving ? '#64b5f6' : '#66bb6a';
       }
@@ -766,11 +776,23 @@
     ctx.textAlign = 'center';
     for (const f of floaters) {
       const a = Math.max(0, f.life / f.maxLife);
-      const growth = 1 + (1 - a) * 0.15;
-      ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px sans-serif`;
-      ctx.globalAlpha = a;
-      ctx.fillStyle = f.color;
-      ctx.fillText(f.text, f.x, f.y);
+      const growth = 1 + (1 - a) * (f.isCombo ? 0.3 : 0.15);
+      
+      // コンボ時は太字イタリック＋黒のアウトラインで派手に演出
+      if (f.isCombo) {
+        ctx.font = `italic 900 ${Math.round(22 * (f.scale || 1) * growth)}px "Segoe UI", sans-serif`;
+        ctx.globalAlpha = a;
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#000';
+        ctx.strokeText(f.text, f.x, f.y);
+        ctx.fillStyle = f.color;
+        ctx.fillText(f.text, f.x, f.y);
+      } else {
+        ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px "Segoe UI", sans-serif`;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = f.color;
+        ctx.fillText(f.text, f.x, f.y);
+      }
       ctx.globalAlpha = 1;
     }
     ctx.textAlign = 'left';
@@ -862,3 +884,5 @@
     flap();
   });
 })();
+
+```
