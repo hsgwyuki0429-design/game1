@@ -29,24 +29,32 @@
   const PIPE_INTERVAL = 1.4;
 
   const DIFFICULTIES = {
+    // ノーマル/ハード/鬼：重力反転なし。特殊土管をどんどん出す
     normal: {
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
-      movingPipeScore: 6, movingChance: 0.3, moveAmp: 40, moveSpeed: 1.1,
-      gravityFlipScore: 12, flipArmDelay: 5, flipNormalDur: [7, 4], flipReversedDur: [3, 1.5],
-      slideChance: 0.2, ambushChance: 0.3, road: false,
+      movingPipeScore: 4, movingChance: 0.4, moveAmp: 40, moveSpeed: 1.1,
+      slideChance: 0.3, ambushChance: 0.34, shrinkChance: 0.2,
+      gravityFlip: false, road: false,
     },
     hard: {
       label: 'ハード', gravity: 1680, flap: -450, gapBase: 145, gapMin: 105, baseSpeed: 205,
-      movingPipeScore: 3, movingChance: 0.45, moveAmp: 52, moveSpeed: 1.5,
-      gravityFlipScore: 6, flipArmDelay: 3.5, flipNormalDur: [5.5, 3], flipReversedDur: [3.2, 1.8],
-      slideChance: 0.3, ambushChance: 0.38, road: true,
+      movingPipeScore: 2, movingChance: 0.5, moveAmp: 52, moveSpeed: 1.5,
+      slideChance: 0.42, ambushChance: 0.46, shrinkChance: 0.3,
+      gravityFlip: false, road: true,
     },
     insane: {
-      // 重力反転一辺倒だと単調なので、反転は控えめにして特殊土管＆「道」イベントで魅せる
       label: '鬼', gravity: 1850, flap: -470, gapBase: 128, gapMin: 95, baseSpeed: 228,
-      movingPipeScore: 0, movingChance: 0.65, moveAmp: 62, moveSpeed: 1.9,
-      gravityFlipScore: 6, flipArmDelay: 3, flipNormalDur: [8, 5], flipReversedDur: [3, 1.5],
-      slideChance: 0.42, ambushChance: 0.5, road: true,
+      movingPipeScore: 0, movingChance: 0.6, moveAmp: 62, moveSpeed: 1.9,
+      slideChance: 0.5, ambushChance: 0.55, shrinkChance: 0.4,
+      gravityFlip: false, road: true,
+    },
+    // 重力反転はこの専用レベルだけに登場
+    gravity: {
+      label: '重力反転', gravity: 1650, flap: -450, gapBase: 150, gapMin: 110, baseSpeed: 200,
+      movingPipeScore: 4, movingChance: 0.4, moveAmp: 48, moveSpeed: 1.3,
+      slideChance: 0.24, ambushChance: 0.3, shrinkChance: 0.16,
+      gravityFlip: true, gravityFlipScore: 4, flipArmDelay: 3.5,
+      flipNormalDur: [6, 3.5], flipReversedDur: [4, 2.5], road: false,
     },
   };
 
@@ -496,26 +504,36 @@
 
   function spawnPipe() {
     const gap = currentGap();
-    const canMove = score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
+
+    // 特殊土管は種類を排他的に決める（1本につき1種類）
+    const isSlideX = score >= 8 && Math.random() < cfg.slideChance;
+    // ⑤ 奇襲（上下の土管が伸びて、最後にすき間の位置が現れる）
+    const isAmbush = !isSlideX && score >= 12 && Math.random() < cfg.ambushChance;
+    // ⑥ シュリンク（近づくにつれてすき間が狭まる）
+    const isShrink = !isSlideX && !isAmbush && score >= 6 && Math.random() < (cfg.shrinkChance || 0);
+    const canMove = !isSlideX && !isAmbush && !isShrink &&
+                    score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
+
     const moveAmp = canMove ? cfg.moveAmp * (0.6 + Math.random() * 0.6) : 0;
     const margin = 40 + moveAmp;
-    const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
 
-    const isSlideX = score >= 8 && Math.random() < cfg.slideChance;
-    // ⑤ 新しい土管: 奇襲（上下の土管が伸びて、最後にすき間の位置が現れる）
-    const isAmbush = score >= 12 && !isSlideX && Math.random() < cfg.ambushChance;
+    // シュリンクは最初のすき間が広いので、配置の余裕も広い方で確保する
+    const shrinkStart = gap + 95;
+    const layoutGap = isShrink ? shrinkStart : gap;
+    const span = Math.max(20, H - GROUND_H - margin * 2 - layoutGap);
 
-    // ノーマルモード以外でのみ、重力反転時に青い土管にする
-    const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
+    const isBlue = gravityDir === -1; // 重力反転レベルで反転中のみ青くなる
 
-    let baseGapY = margin + Math.random() * span + gap / 2;
+    let baseGapY = margin + Math.random() * span + layoutGap / 2;
 
     pipes.push({
       x: W + PIPE_WIDTH,
       baseX: W + PIPE_WIDTH,
       gapY: baseGapY,
       baseGapY,
-      gap,
+      gap: isShrink ? shrinkStart : gap,
+      gapFinal: gap,
+      shrinkStart,
       passed: false,
       moving: canMove,
       moveAmp,
@@ -524,6 +542,7 @@
       isSlideX,
       slideXPhase: Math.random() * Math.PI * 2,
       isAmbush,
+      isShrink,
       isBlue,
     });
   }
@@ -636,6 +655,7 @@
   }
 
   function updateGravityFlip(dt) {
+    if (!cfg.gravityFlip) return; // 重力反転はこの機能を持つレベルだけ
     if (controlChaosMode) return;
     if (roadActive) return; // 「道」イベント中は重力を反転させない（安定した重力で駆け抜ける）
 
@@ -688,7 +708,7 @@
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
     groundOffset = (groundOffset + speed * dt) % 40;
 
-    if (difficulty === 'insane' && score >= 20) {
+    if (difficulty === 'gravity' && score >= 20) {
       if (!controlChaosMode) {
         controlChaosCooldown -= dt;
         if (controlChaosCooldown <= 0) {
@@ -779,7 +799,13 @@
       if (p.moving) {
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
-      
+
+      // ⑥ シュリンク：接近するにつれて、広いすき間が通常のすき間まで狭まる
+      if (p.isShrink) {
+        const t = Math.max(0, Math.min(1, (W - p.x) / (W - W * 0.3)));
+        p.gap = p.shrinkStart + (p.gapFinal - p.shrinkStart) * t;
+      }
+
       // ⑤ 奇襲土管の伸び具合は土管のx位置で決まるため、ここでの更新は不要
 
       if (p.isSlideX) {
@@ -919,6 +945,10 @@
         // 「道」を作る黄色い土管
         ctx.fillStyle = '#ffde3d';
         ctx.strokeStyle = '#e0a800';
+      } else if (p.isShrink) {
+        // 近づくと狭まる赤い土管
+        ctx.fillStyle = '#ef5350';
+        ctx.strokeStyle = '#c62828';
       } else if (p.isAmbush) {
         ctx.fillStyle = '#ffb300';
         ctx.strokeStyle = '#ff8f00';
@@ -944,6 +974,8 @@
 
       if (p.isRoad) {
         ctx.fillStyle = '#fff08a';
+      } else if (p.isShrink) {
+        ctx.fillStyle = '#e57373';
       } else if (p.isAmbush) {
         ctx.fillStyle = '#ffca28';
       } else if (p.isSlideX) {

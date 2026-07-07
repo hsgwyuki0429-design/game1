@@ -202,6 +202,7 @@ canvas {
 
 #diff-select {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
   margin: 0 0 14px;
@@ -237,6 +238,12 @@ canvas {
 .diff-btn[data-diff="insane"].active {
   background: #ff4d6d;
   border-color: #ff4d6d;
+}
+
+.diff-btn[data-diff="gravity"].active {
+  background: #ba68c8;
+  border-color: #ba68c8;
+  color: #fff;
 }
 
 #overlay-sub {
