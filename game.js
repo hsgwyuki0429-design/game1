@@ -69,6 +69,9 @@
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
+  
+  // 鬼モード専用の操作変更タイム用変数
+  let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
   const GRAVITY_WARN_LEAD = 1;
   const GRAVITY_CLEAR_AFTER = 2.5;
@@ -111,6 +114,12 @@
     gravityPhaseTimer = 0;
     gravityWarn = false;
     noSpawnTimer = 0;
+    
+    // 鬼モードイベント変数の初期化
+    controlChaosMode = false;
+    controlChaosTimer = 0;
+    controlChaosCooldown = 15; // スコア20達成後、15秒経過で初回発動
+
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
     initClouds();
@@ -306,6 +315,9 @@
     const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
     let ambushDir = Math.random() < 0.5 ? 'bottom' : 'side';
 
+    // ノーマルモード以外でのみ、重力反転時に青い土管にする
+    const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
+
     let baseGapY = margin + Math.random() * span + gap / 2;
 
     if (isAmbush) {
@@ -331,6 +343,7 @@
       isAmbush,
       ambushDir,
       ambushT: 0,
+      isBlue,
     });
   }
 
@@ -340,6 +353,18 @@
       return;
     }
     if (state === 'playing') {
+      
+      // 鬼モードの操作変更タイム中は、タップで重力が反転する
+      if (controlChaosMode) {
+        gravityDir *= -1;
+        bird.vy = 0; // 重力反転時に速度リセット
+        triggerFlash('186,104,200', 0.15);
+        triggerShake(5, 0.1);
+        playGravityFlip(gravityDir === -1);
+        vibrate([10, 15]);
+        return; // 通常のジャンプは行わない
+      }
+
       bird.vy = cfg.flap * gravityDir;
       squash = 1.4;
       triggerPunch(0.015);
@@ -405,6 +430,8 @@
   }
 
   function updateGravityFlip(dt) {
+    if (controlChaosMode) return; // 操作変更イベント中は自動タイマーをストップ
+
     if (!gravityArmed) {
       if (score >= cfg.gravityFlipScore) {
         gravityArmed = true;
@@ -428,7 +455,7 @@
       const levelBonus = Math.floor(score / 5) * 1.0; 
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
       
-      // ① 重力が反転している時も土管を残すため削除: pipes = pipes.filter(p => p.passed);
+      // 反転時も土管を残すため削除処理は書かない
       
       noSpawnTimer = Math.max(noSpawnTimer, GRAVITY_CLEAR_AFTER);
       triggerFlash(gravityDir === -1 ? '186,104,200' : '255,255,255', 0.3);
@@ -456,6 +483,40 @@
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
     groundOffset = (groundOffset + speed * dt) % 40;
 
+    // 鬼モードの操作変更タイムイベントの管理
+    if (difficulty === 'insane' && score >= 20) {
+      if (!controlChaosMode) {
+        controlChaosCooldown -= dt;
+        if (controlChaosCooldown <= 0) {
+          controlChaosMode = true;
+          controlChaosTimer = 10; // 10秒間操作変更
+          gravityBadge.textContent = '⚠ 警告: タップで重力反転';
+          gravityBadge.classList.remove('hidden', 'active');
+          gravityBadge.classList.add('warn');
+          playGravityWarn();
+        }
+      } else {
+        controlChaosTimer -= dt;
+        if (controlChaosTimer <= 0) {
+          controlChaosMode = false;
+          controlChaosCooldown = 20 + Math.random() * 10; // 次の発生まで20〜30秒
+          gravityBadge.classList.add('hidden');
+          gravityBadge.classList.remove('warn');
+          spawnFloater(W / 2, H / 2 - 40, "SYSTEM RESTORED", "#4caf50", 1.5);
+          beep({ freq: 800, glideTo: 1200, duration: 0.2, type: 'square', volume: 0.1 });
+          
+          // イベント終了後、安全に通常の重力サイクルに戻す
+          if (gravityDir === -1) {
+            gravityPhaseTimer = 1.5;
+            gravityWarn = false;
+          } else {
+            gravityPhaseTimer = randRange(cfg.flipNormalDur);
+            gravityWarn = false;
+          }
+        }
+      }
+    }
+
     updateGravityFlip(dt);
 
     bird.vy += cfg.gravity * gravityDir * dt;
@@ -469,7 +530,7 @@
       // ② 重力の向きが変わる瞬間前後一秒は土管がないようにする
       let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
       let safeToSpawn = true;
-      if (gravityArmed && gravityPhaseTimer > 0) {
+      if (gravityArmed && gravityPhaseTimer > 0 && !controlChaosMode) {
         if (Math.abs(willArriveAt - gravityPhaseTimer) <= 1.0) safeToSpawn = false; 
       }
       
@@ -511,7 +572,18 @@
           combo++;
           playCombo();
           triggerShake(15, 0.25); 
-          spawnFloater(bird.x, bird.y - 40, `COMBO x${combo}`, '#00f0ff', 1.2 + Math.min(0.5, combo * 0.1));
+
+          const comboWords = ['COOL!', 'GREAT!', 'PERFECT!', 'EXCELLENT!', 'UNSTOPPABLE!', 'GODLIKE!'];
+          const word = comboWords[Math.min(comboWords.length - 1, Math.floor(Math.max(0, combo - 1) / 2))];
+          
+          // コンボテロップの色調（通常の数字テロップに合わせる）
+          let comboColor = '#ffd166'; 
+          if (combo >= 5) comboColor = '#ff8c42'; 
+          if (combo >= 10) comboColor = '#ff6b6b';
+
+          // コンボのテロップも数字テロップと全く同じフォント・スタイルで表示する
+          spawnFloater(bird.x, bird.y - 40, `${word} [x${combo}]`, comboColor, 1.2 + Math.min(0.5, combo * 0.1));
+          spawnBurst(bird.x, bird.y, [comboColor, '#fff'], 15, { speed: 200, life: 0.6, size: 4, starRatio: 1 });
         } else {
           combo = 0; 
         }
@@ -651,6 +723,10 @@
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ab47bc';
         ctx.strokeStyle = '#7b1fa2';
+      } else if (p.isBlue) {
+        // 青い土管のカラーリング
+        ctx.fillStyle = '#00e5ff';
+        ctx.strokeStyle = '#00b8d4';
       } else {
         ctx.fillStyle = p.moving ? '#42a5f5' : '#4caf50';
         ctx.strokeStyle = p.moving ? '#1565c0' : '#2e7d32';
@@ -669,6 +745,8 @@
         ctx.fillStyle = '#ffca28';
       } else if (p.isSlideX) {
         ctx.fillStyle = '#ce93d8';
+      } else if (p.isBlue) {
+        ctx.fillStyle = '#84ffff'; // 青い土管のハイライト
       } else {
         ctx.fillStyle = p.moving ? '#64b5f6' : '#66bb6a';
       }
@@ -761,6 +839,7 @@
       const a = Math.max(0, f.life / f.maxLife);
       const growth = 1 + (1 - a) * 0.15;
       
+      // 通常のスコアと同じフォントスタイルに統一
       ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px sans-serif`;
       ctx.globalAlpha = a;
       ctx.fillStyle = f.color;
