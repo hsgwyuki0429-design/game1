@@ -188,16 +188,20 @@
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
-  
+  let gravEaseTimer; // 反転・復帰の直後だけ加速度をやわらげ、曲線的に通常へ戻すためのタイマー
+
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
   // 重力反転2秒前から警告を出し、加速度の緩和期間にも入る
-  const GRAVITY_WARN_LEAD = 2.0; 
+  const GRAVITY_WARN_LEAD = 2.0;
   // 反転後も2秒間は土管を出さない＆加速度緩和
-  const GRAVITY_CLEAR_AFTER = 2.0; 
-  
-  const GRAVITY_REVERSED_GRAV_MUL = 0.72;
+  const GRAVITY_CLEAR_AFTER = 2.0;
+
   const GRAVITY_REVERSED_SPEED_MUL = 0.8;
+  // 反転・復帰の直後の加速度のやわらげ具合と、通常へ戻しきるまでの時間。
+  // 向きが変わってから、最初の土管が来る少し前には通常(1.0)へ戻りきる。
+  const GRAVITY_EASE_START = 0.5;                          // 変化直後の弱い加速度
+  const GRAVITY_EASE_DURATION = GRAVITY_CLEAR_AFTER + 0.6; // ≒2.6秒かけて曲線的に通常へ
   // 奇襲土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
   // 伸びる進行度は土管のx位置で決める（速度に依らず一定の場所で開ききる）。
   const AMBUSH_GROW_START_X = W * 0.95; // 画面に入ってすぐ伸び始める
@@ -246,6 +250,7 @@
     gravityPhaseTimer = 0;
     gravityWarn = false;
     noSpawnTimer = 0;
+    gravEaseTimer = 0;
 
     controlChaosMode = false;
     controlChaosTimer = 0;
@@ -611,10 +616,13 @@
     if (gravityPhaseTimer <= 0) {
       gravityDir *= -1;
       gravityWarn = false;
-      
-      const levelBonus = Math.floor(score / 5) * 1.0; 
+
+      // 反転／復帰の直後だけ加速度をやわらげ、曲線的に通常へ戻す
+      gravEaseTimer = GRAVITY_EASE_DURATION;
+
+      const levelBonus = Math.floor(score / 5) * 1.0;
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
-      
+
       noSpawnTimer = Math.max(noSpawnTimer, GRAVITY_CLEAR_AFTER);
       triggerFlash(gravityDir === -1 ? '186,104,200' : '255,255,255', 0.3);
       triggerShake(10, 0.3);
@@ -686,12 +694,13 @@
 
     updateGravityFlip(dt);
 
-    // ★ トランジション期間は重力（落下加速度）を弱くする
+    // ★ 反転・復帰の直後だけ加速度をやわらげ、次の土管が来る前に曲線的に通常へ戻す
     let currentGravity = cfg.gravity;
-    if (isGravityTransition) {
-      currentGravity *= 0.5;
-    } else if (gravityDir === -1) {
-      currentGravity *= GRAVITY_REVERSED_GRAV_MUL;
+    if (gravEaseTimer > 0) {
+      const p = 1 - gravEaseTimer / GRAVITY_EASE_DURATION; // 0（変化直後）→ 1（戻りきり）
+      const curve = p * p * (3 - 2 * p);                   // smoothstep でなめらかに
+      currentGravity *= GRAVITY_EASE_START + (1 - GRAVITY_EASE_START) * curve;
+      gravEaseTimer = Math.max(0, gravEaseTimer - dt);
     }
 
     bird.vy += currentGravity * gravityDir * dt;
