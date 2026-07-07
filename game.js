@@ -241,11 +241,12 @@
     gravityPhaseTimer = 0;
     gravityWarn = false;
     noSpawnTimer = 0;
-    
+
     // 鬼モードイベント変数の初期化
     controlChaosMode = false;
     controlChaosTimer = 0;
     controlChaosCooldown = 15; // スコア20達成後、15秒経過で初回発動
+    combo = 0;
 
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
@@ -509,9 +510,9 @@
 
     if (isAmbush) {
        const r = Math.random();
-       if (r < 0.33) baseGapY = margin + gap / 2; 
-       else if (r < 0.66) baseGapY = H / 2; 
-       else baseGapY = H - GROUND_H - margin - gap / 2; 
+       if (r < 0.33) baseGapY = margin + gap / 2;
+       else if (r < 0.66) baseGapY = H / 2;
+       else baseGapY = H - GROUND_H - margin - gap / 2;
     }
 
     pipes.push({
@@ -530,6 +531,7 @@
       isAmbush,
       ambushDir,
       ambushT: 0,
+      ambushStartX: W * 0.35, // 画面内に入ってから奇襲開始
       isBlue,
     });
   }
@@ -736,10 +738,9 @@
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
       
-      // ⑤ 新しい土管（奇襲）のアニメーション進行
+      // ⑤ 新しい土管（奇襲）のアニメーション進行 → 画面内に入ってから奇襲開始
       if (p.isAmbush) {
-        const dist = p.x - bird.x;
-        if (dist < 400) {
+        if (p.x < p.ambushStartX) {
           p.ambushT += dt * 3.5;
           if (p.ambushT > 1) p.ambushT = 1;
         }
@@ -755,29 +756,6 @@
 
       if (!p.passed && p.x + PIPE_WIDTH < bird.x - bird.r) {
         p.passed = true;
-        
-        // ③ 真ん中1/3を通るとコンボ
-        const centerMin = p.gapY - p.gap / 6;
-        const centerMax = p.gapY + p.gap / 6;
-        if (bird.y > centerMin && bird.y < centerMax) {
-          combo++;
-          playCombo();
-          triggerShake(15, 0.25); 
-
-          const comboWords = ['COOL!', 'GREAT!', 'PERFECT!', 'EXCELLENT!', 'UNSTOPPABLE!', 'GODLIKE!'];
-          const word = comboWords[Math.min(comboWords.length - 1, Math.floor(Math.max(0, combo - 1) / 2))];
-          
-          // コンボテロップの色調（通常の数字テロップに合わせる）
-          let comboColor = '#ffd166'; 
-          if (combo >= 5) comboColor = '#ff8c42'; 
-          if (combo >= 10) comboColor = '#ff6b6b';
-
-          // コンボのテロップも数字テロップと全く同じフォント・スタイルで表示する
-          spawnFloater(bird.x, bird.y - 40, `${word} [x${combo}]`, comboColor, 1.2 + Math.min(0.5, combo * 0.1));
-          spawnBurst(bird.x, bird.y, [comboColor, '#fff'], 15, { speed: 200, life: 0.6, size: 4, starRatio: 1 });
-        } else {
-          combo = 0; 
-        }
 
         score++;
         scoreEl.textContent = String(score);
@@ -790,11 +768,9 @@
           triggerInvertPulse('fx-invert');
           spawnShockwave(bird.x, bird.y, '#ffd166', 130, 0.5);
         }
-        
-        if (!combo) {
-          spawnFloater(bird.x, bird.y - 20, milestone ? `+1 コンボ x${score / 5}` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
-        }
-        
+
+        spawnFloater(bird.x, bird.y - 20, milestone ? `+${Math.floor(score / 5)}` : '+1', milestone ? '#ff6b6b' : '#ffd166', milestone ? 1.2 : 1);
+
         spawnBurst(
           bird.x, bird.y,
           milestone ? ['#ffd166', '#ff6b6b', '#4caf50', '#fff'] : ['#ffd166', '#fff8e1'],
