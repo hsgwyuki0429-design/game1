@@ -202,6 +202,8 @@
   // 重力反転中のゆるめ係数（重力と横スクロール速度を弱める）
   const GRAVITY_REVERSED_GRAV_MUL = 0.72;
   const GRAVITY_REVERSED_SPEED_MUL = 0.8;
+  // 奇襲(横)の滑り込み距離。画面幅ぶんだと右外に隠れて突然出るので、画面内に収める
+  const AMBUSH_SIDE_OFFSET = 160;
 
   function initClouds() {
     clouds = [];
@@ -744,9 +746,10 @@
       }
       
       // ⑤ 新しい土管（奇襲）のアニメーション進行 → 画面内に入ってから奇襲開始
+      // 右から滑り込む動きが速すぎるので、進行速度を 1/3 にしてゆっくり奇襲する
       if (p.isAmbush) {
         if (p.x < p.ambushStartX) {
-          p.ambushT += dt * 3.5;
+          p.ambushT += dt * (3.5 / 3);
           if (p.ambushT > 1) p.ambushT = 1;
         }
       }
@@ -819,7 +822,7 @@
       if (p.isAmbush) {
          const ease = 1 - Math.pow(1 - p.ambushT, 4); 
          if (p.ambushDir === 'bottom') cyOffset = (1 - ease) * H;
-         else cx = p.x + (1 - ease) * W;
+         else cx = p.x + (1 - ease) * AMBUSH_SIDE_OFFSET;
       }
 
       const inX = bird.x + bird.r > cx && bird.x - bird.r < cx + PIPE_WIDTH;
@@ -883,7 +886,7 @@
       if (p.isAmbush) {
          const ease = 1 - Math.pow(1 - p.ambushT, 4);
          if (p.ambushDir === 'bottom') renderOffsetY = (1 - ease) * H;
-         else renderX = p.x + (1 - ease) * W;
+         else renderX = p.x + (1 - ease) * AMBUSH_SIDE_OFFSET;
       }
 
       const topH = p.gapY - p.gap / 2 + renderOffsetY;
