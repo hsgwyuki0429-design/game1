@@ -672,6 +672,11 @@
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
     // 重力反転中はむずかしくなりすぎるので、進む速度を少しゆるめて反応する余裕を持たせる
     if (gravityDir === -1) speed *= GRAVITY_REVERSED_SPEED_MUL;
+
+    // 奇襲土管が画面に表示されている間だけ速度を 1/3 に
+    const hasAmbushOnScreen = pipes.some(p => p.isAmbush && p.x < W && p.x > -PIPE_WIDTH);
+    if (hasAmbushOnScreen) speed *= 0.33;
+
     groundOffset = (groundOffset + speed * dt) % 40;
 
     // 鬼モードの操作変更タイムイベントの管理
