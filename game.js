@@ -198,6 +198,15 @@
   
   const GRAVITY_REVERSED_GRAV_MUL = 0.72;
   const GRAVITY_REVERSED_SPEED_MUL = 0.8;
+  // 奇襲土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
+  // 伸びる進行度は土管のx位置で決める（速度に依らず一定の場所で開ききる）。
+  const AMBUSH_GROW_START_X = W * 0.95; // 画面に入ってすぐ伸び始める
+  const AMBUSH_GROW_END_X = W * 0.42;   // ここまでに伸びきってすき間が判明する
+  function ambushGrow(p) {
+    const t = (AMBUSH_GROW_START_X - p.x) / (AMBUSH_GROW_START_X - AMBUSH_GROW_END_X);
+    const c = Math.max(0, Math.min(1, t));
+    return c * c; // 序盤はゆっくり、終盤で一気に伸びてすき間が現れる
+  }
 
   function initClouds() {
     clouds = [];
@@ -474,7 +483,10 @@
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
     
     const isSlideX = score >= 8 && Math.random() < 0.2;
+    // ⑤ 新しい土管: 奇襲（上下の土管が伸びて、最後にすき間の位置が現れる）
     const isAmbush = score >= 12 && !isSlideX && Math.random() < 0.3;
+
+    // ノーマルモード以外でのみ、重力反転時に青い土管にする
     const isBlue = (gravityDir === -1) && (difficulty !== 'normal');
 
     let baseGapY = margin + Math.random() * span + gap / 2;
@@ -493,8 +505,6 @@
       isSlideX,
       slideXPhase: Math.random() * Math.PI * 2,
       isAmbush,
-      ambushT: 0,
-      ambushStartX: W * 0.65,
       isBlue,
     });
   }
@@ -714,12 +724,7 @@
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
       
-      if (p.isAmbush) {
-        if (p.x < p.ambushStartX) {
-          p.ambushT += dt * 3.5; 
-          if (p.ambushT > 1) p.ambushT = 1;
-        }
-      }
+      // ⑤ 奇襲土管の伸び具合は土管のx位置で決まるため、ここでの更新は不要
 
       if (p.isSlideX) {
         p.baseX -= speed * dt;
@@ -782,21 +787,16 @@
     }
 
     for (const p of pipes) {
-      let cx = p.x;
-      let topH = p.gapY - p.gap / 2;
-      let botY = p.gapY + p.gap / 2;
-
-      if (p.isAmbush) {
-         const ease = 1 - Math.pow(1 - p.ambushT, 4); 
-         const startTopH = 20;
-         const startBotY = (H - GROUND_H) - 20;
-         
-         topH = startTopH + (topH - startTopH) * ease;
-         botY = startBotY + (botY - startBotY) * ease;
-      }
-
-      const inX = bird.x + bird.r > cx && bird.x - bird.r < cx + PIPE_WIDTH;
+      const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_WIDTH;
       if (inX) {
+        let topH = p.gapY - p.gap / 2;
+        let botY = p.gapY + p.gap / 2;
+        // 奇襲土管：上下がまだ伸びきっていない間は、伸びた分だけが壁になる
+        if (p.isAmbush) {
+          const e = ambushGrow(p);
+          topH = (p.gapY - p.gap / 2) * e;
+          botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
+        }
         if (bird.y - bird.r < topH || bird.y + bird.r > botY) {
           endGame();
           return;
@@ -848,17 +848,15 @@
 
   function drawPipes() {
     for (const p of pipes) {
-      let renderX = p.x;
+      const renderX = p.x;
+
       let topH = p.gapY - p.gap / 2;
       let botY = p.gapY + p.gap / 2;
-      
+      // 奇襲土管：上下の土管が伸びていく様子を描く
       if (p.isAmbush) {
-         const ease = 1 - Math.pow(1 - p.ambushT, 4);
-         const startTopH = 20; 
-         const startBotY = (H - GROUND_H) - 20;
-         
-         topH = startTopH + (topH - startTopH) * ease;
-         botY = startBotY + (botY - startBotY) * ease;
+        const e = ambushGrow(p);
+        topH = (p.gapY - p.gap / 2) * e;
+        botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
       }
 
       if (p.isAmbush) {
@@ -894,10 +892,15 @@
         ctx.fillStyle = p.moving ? pipeSkin.mCap : pipeSkin.cap;
       }
 
-      ctx.fillRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
-      ctx.strokeRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
-      ctx.fillRect(renderX - 4, botY, PIPE_WIDTH + 8, 20);
-      ctx.strokeRect(renderX - 4, botY, PIPE_WIDTH + 8, 20);
+      // 伸びていない土管には縁（キャップ）を描かない（奇襲の伸び始め対策）
+      if (topHeight > 0.5) {
+        ctx.fillRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
+        ctx.strokeRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
+      }
+      if (bottomHeight > 0.5) {
+        ctx.fillRect(renderX - 4, botY, PIPE_WIDTH + 8, 20);
+        ctx.strokeRect(renderX - 4, botY, PIPE_WIDTH + 8, 20);
+      }
     }
   }
 
