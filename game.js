@@ -727,15 +727,46 @@
   }
 
   // ==========================================
-  // ★ オートパイロット用ロジック（神エイム化）
+  // ★ オートパイロット用ロジック（神エイム化 v2：回廊方式）
+  //   - 動く土管は「到達する時刻のすき間位置」を予測してエイム
+  //   - シュリンク土管は最終的に狭まった幅で考える
+  //   - 前方2本の土管から「安全に飛べる帯（回廊）」を計算し、
+  //     道イベントの密集地帯も先読みしてなめらかに通す
   // ==========================================
+
+  // tAhead秒後の土管のすき間（上端・下端）を予測する
+  function aiGapAt(p, tAhead) {
+    let gapY = p.gapY;
+    if (p.moving) {
+      gapY = p.baseGapY + Math.sin((elapsed + tAhead) * p.moveSpeed + p.movePhase) * p.moveAmp;
+    }
+    // シュリンクは通過するころには最終幅まで狭まっている
+    const gap = p.isShrink ? p.gapFinal : p.gap;
+    return { top: gapY - gap / 2, bot: gapY + gap / 2 };
+  }
+
+  // 土管の「到達時点〜その直後」に安全な帯を計算する（動く土管のスイング対策）。
+  // 全通過区間の交差だと動く土管で狭くなりすぎるので、直近0.18秒ぶんを追従する。
+  function aiCorridor(p) {
+    const tIn = Math.max(0, (p.x - bird.r - bird.x) / speed);
+    const tOut = Math.max(0, (p.x + PIPE_WIDTH + bird.r - bird.x) / speed);
+    const tB = Math.min(tOut, tIn + 0.18);
+    const a = aiGapAt(p, tIn);
+    const b = aiGapAt(p, tB);
+    return {
+      top: Math.max(a.top, b.top),
+      bot: Math.min(a.bot, b.bot),
+    };
+  }
+
   function doAutoPilot(dt) {
     if (autoCooldown > 0) autoCooldown -= dt;
 
     if (state === 'ready' || state === 'gameover') {
       if (autoCooldown <= 0) {
-        flap();
-        autoCooldown = 1.0;
+        flap(); // スタート／もう一度
+        // 開始直後の初手を邪魔しない短さにする（長いと開始1秒で落下死する）
+        autoCooldown = 0.25;
       }
       return;
     }
@@ -744,58 +775,61 @@
 
     const doFlap = () => {
       flap();
-      // 連続タップによる暴発を防ぎつつ、素早い反応ができる短い間隔
-      autoCooldown = 0.08; 
+      autoCooldown = 0.06; // 素早い反応を保ちつつ連打の暴発を防ぐ
     };
 
-    // 次に越えなければならない土管を見つける
-    let nextPipe = null;
+    // 前方の土管を2本まで見つける（配列は左→右の順）
+    let first = null, second = null;
     for (const p of pipes) {
-      if (p.x + PIPE_WIDTH > bird.x - bird.r) {
-        nextPipe = p;
-        break;
+      if (p.x + PIPE_WIDTH + bird.r > bird.x) {
+        if (!first) { first = p; }
+        else { second = p; break; }
       }
     }
 
-    // 重力と現在の速度から「0.12秒後の未来のY位置」を計算
-    let t = 0.12;
-    let futureY = bird.y + bird.vy * t + 0.5 * (cfg.gravity * gravityDir) * t * t;
+    // 安全に飛べる帯（回廊）を求める。初期値は天井と地面。
+    const MARGIN = 5;
+    let corTop = bird.r + 6;
+    let corBot = H - GROUND_H - bird.r - 6;
+    if (first) {
+      const c = aiCorridor(first);
+      corTop = Math.max(corTop, c.top + bird.r + MARGIN);
+      corBot = Math.min(corBot, c.bot - bird.r - MARGIN);
+      // 道イベントなど土管が密集しているときは、次の1本も先読みして帯を絞る
+      if (second && second.x - first.x < 210) {
+        const c2 = aiCorridor(second);
+        corTop = Math.max(corTop, c2.top + bird.r + MARGIN);
+        corBot = Math.min(corBot, c2.bot - bird.r - MARGIN);
+      }
+      // 回廊がつぶれた（両立不能）ときは中央を狙う
+      if (corTop > corBot) { const mid = (corTop + corBot) / 2; corTop = mid; corBot = mid; }
+    }
 
-    // 特殊：自分で重力反転を行う警告モードの時
+    // フラップすると必ずこの高さだけ跳ぶ（頂点までの上昇量）
+    const flapRise = (cfg.flap * cfg.flap) / (2 * cfg.gravity);
+    // t秒後の未来位置
+    const predict = (t) => bird.y + bird.vy * t + 0.5 * cfg.gravity * gravityDir * t * t;
+
     if (controlChaosMode) {
-      if (nextPipe) {
-        // 通常重力で落下中、目標地点より下に行きそうなら反転して昇る
-        if (gravityDir === 1 && futureY > nextPipe.gapY + 15) doFlap();
-        // 反転重力で上昇中、目標地点より上に行きそうなら反転して落ちる
-        else if (gravityDir === -1 && futureY < nextPipe.gapY - 15) doFlap();
-      } else {
-        // 土管がない場合は画面中央をキープ
-        if (gravityDir === 1 && futureY > H / 2 + 30) doFlap();
-        else if (gravityDir === -1 && futureY < H / 2 - 30) doFlap();
-      }
-      return; // 特殊モードの時はこれで終了
+      // タップ＝重力反転モード（vyリセットなので跳びすぎの心配なし）：端を割りそうなら反転
+      const fy = predict(0.09);
+      if (gravityDir === 1 && fy > corBot) doFlap();
+      else if (gravityDir === -1 && fy < corTop) doFlap();
+      return;
     }
 
-    // 通常時のエイム
-    if (nextPipe) {
-      // ターゲットとするY座標。
-      // ジャンプすると勢いよく逆方向に進むので、隙間の中心から「重力が引く方向」に少し寄せた位置を狙う。
-      let targetY = nextPipe.gapY + (gravityDir === 1 ? nextPipe.gap * 0.25 : -nextPipe.gap * 0.25);
-
-      if (gravityDir === 1) {
-        // 未来位置がターゲットより下、または地面に激突しそうなら飛ぶ
-        if (futureY > targetY || futureY > H - GROUND_H - bird.r - 5) doFlap();
-      } else {
-        // 反転重力：未来位置がターゲットより上、または天井に激突しそうなら飛ぶ
-        if (futureY < targetY || futureY < bird.r + 5) doFlap();
-      }
+    // 落下速度が速いときに早くフラップしすぎると、固定量の跳躍で
+    // 上の土管に刺さるので、予測は短く・頂点チェック付きで判断する。
+    const soon = predict(0.05);      // まもなく割るか
+    const urgent = predict(0.016);   // 次のフレームで割るか（待ったなし）
+    if (gravityDir === 1) {
+      // 跳んだ頂点が回廊の上端を突き抜けるなら、ギリギリまでフラップを遅らせる
+      const pierce = bird.y - flapRise < corTop - 6;
+      if (soon > corBot && (!pierce || urgent > corBot)) doFlap();
     } else {
-      // 土管がない場合は画面中央付近を維持
-      if (gravityDir === 1) {
-        if (futureY > H / 2 + 20) doFlap();
-      } else {
-        if (futureY < H / 2 - 20) doFlap();
-      }
+      // 反転重力：フラップは下向きに跳ぶ
+      const pierce = bird.y + flapRise > corBot + 6;
+      if (soon < corTop && (!pierce || urgent < corTop)) doFlap();
     }
   }
 
