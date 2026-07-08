@@ -22,14 +22,13 @@
   const charGrid = document.getElementById('char-grid');
   const pipeGrid = document.getElementById('pipe-grid');
 
-  // 自動操作用ボタンの追加
-  const wrapper = canvas.parentElement || document.body;
+  // ★自動操作用ボタンの追加位置を修正 (stage要素の中に絶対配置し、最前面に出す)
   const autoBtn = document.createElement('button');
   autoBtn.textContent = '🤖 自動操作: OFF';
   autoBtn.style.position = 'absolute';
   autoBtn.style.top = '10px';
   autoBtn.style.right = '10px';
-  autoBtn.style.zIndex = '50';
+  autoBtn.style.zIndex = '9999'; // 最前面に表示
   autoBtn.style.padding = '8px 12px';
   autoBtn.style.background = 'rgba(0,0,0,0.5)';
   autoBtn.style.color = '#fff';
@@ -39,11 +38,11 @@
   autoBtn.style.fontWeight = 'bold';
   autoBtn.style.cursor = 'pointer';
   autoBtn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-  wrapper.appendChild(autoBtn);
+  stage.appendChild(autoBtn); // stageに直接追加
 
   let isAutoPilot = false;
   autoBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
+    e.stopPropagation(); // ゲームのタップ判定に影響しないようにする
     isAutoPilot = !isAutoPilot;
     autoBtn.textContent = isAutoPilot ? '🤖 自動操作: ON' : '🤖 自動操作: OFF';
     autoBtn.style.background = isAutoPilot ? '#4caf50' : 'rgba(0,0,0,0.5)';
