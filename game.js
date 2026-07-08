@@ -215,11 +215,11 @@
 
     const box = document.createElement('div');
     box.style.background = '#222';
-    box.style.padding = '20px';
+    box.style.padding = '16px';
     box.style.borderRadius = '15px';
     box.style.width = '90%';
     box.style.maxWidth = '420px';
-    box.style.maxHeight = '85vh';
+    box.style.maxHeight = '92vh';
     box.style.color = '#fff';
     box.style.fontFamily = 'sans-serif';
     box.style.display = 'flex';
@@ -234,26 +234,35 @@
     }
 
     box.innerHTML = `
-      <h2 style="text-align:center; margin-top:0; color:#ffd166; font-size:22px; display:flex; justify-content:center; align-items:center; gap:8px;">
-         <span style="font-size:28px;">🏆</span> ${lbMode === 'global' ? '世界ランキング' : 'ランキング'}
+      <h2 style="text-align:center; margin:0 0 4px; color:#ffd166; font-size:20px; display:flex; justify-content:center; align-items:center; gap:6px;">
+         <span style="font-size:24px;">🏆</span> ${lbMode === 'global' ? '世界ランキング' : 'ランキング'}
       </h2>
-      <p style="text-align:center; margin:-6px 0 12px; font-size:12px; color:${lbMode === 'global' ? '#81c784' : '#e0a94b'};">
+      <p style="text-align:center; margin:-4px 0 8px; font-size:12px; color:${lbMode === 'global' ? '#81c784' : '#e0a94b'};">
         ${lbMode === 'global' ? '🌐 世界中のプレイヤーと共通' : '📱 この端末に保存中（Firebase未設定）'}
       </p>
-      <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
         ${tabsHtml}
       </div>
-      <div id="lb-content" style="flex:1; overflow-y:auto; background:#111; border-radius:8px; padding:10px; min-height:250px;">
-        <div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>
+      <div id="lb-content-wrap" style="position:relative; flex:1; min-height:clamp(280px, 42vh, 420px); border-radius:8px; overflow:hidden;">
+        <div id="lb-content" style="position:absolute; inset:0; overflow-y:auto; background:#111; padding:10px;">
+          <div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>
+        </div>
+        <div id="lb-scroll-hint" style="position:absolute; left:0; right:0; bottom:0; height:34px; background:linear-gradient(rgba(17,17,17,0), rgba(17,17,17,0.95) 75%); display:flex; align-items:flex-end; justify-content:center; padding-bottom:2px; font-size:12px; color:#ffd166; font-weight:700; pointer-events:none; opacity:0; transition:opacity 0.2s;">▼ 下にスクロールしてもっと見る</div>
       </div>
-      <button id="close-lb-btn" style="margin-top:15px; padding:12px; background:#e53935; color:#fff; border:none; border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer;">閉じる</button>
+      <button id="close-lb-btn" style="margin-top:12px; padding:12px; background:#e53935; color:#fff; border:none; border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer;">閉じる</button>
     `;
-    
+
     overlayDiv.appendChild(box);
     document.body.appendChild(overlayDiv);
-    
+
     const contentDiv = box.querySelector('#lb-content');
-    
+    const scrollHint = box.querySelector('#lb-scroll-hint');
+    const updateScrollHint = () => {
+        const canScrollMore = contentDiv.scrollHeight - contentDiv.scrollTop - contentDiv.clientHeight > 4;
+        scrollHint.style.opacity = canScrollMore ? '1' : '0';
+    };
+    contentDiv.addEventListener('scroll', updateScrollHint);
+
     const LB_TIMEOUT_MS = 8000; // 通信が固まって「読み込み中」が終わらないのを防ぐ上限時間
     const withTimeout = (promise, ms) => {
         let timer;
@@ -274,6 +283,7 @@
             e.stopPropagation();
             loadData(diff);
         });
+        updateScrollHint();
     };
     const loadData = async (diff) => {
         const seq = ++loadSeq;
@@ -288,9 +298,10 @@
         if (seq !== loadSeq) return;
         if (data.length === 0) {
             contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">まだ記録がありません</div>';
+            updateScrollHint();
             return;
         }
-        
+
         let html = '<table style="width:100%; border-collapse:collapse; text-align:left;">';
         data.forEach((entry, idx) => {
             let rankColor = '#aaa';
@@ -305,14 +316,15 @@
             
             html += `
               <tr style="border-bottom:1px solid #333; background:${bg};">
-                <td style="padding:12px 5px; font-weight:bold; color:${rankColor}; width:30px; text-align:center; font-size: ${idx < 3 ? '18px' : '14px'};">${rankText}</td>
-                <td style="padding:12px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; font-size:15px; font-weight: ${isMe ? 'bold' : 'normal'}; color: ${isMe ? '#81c784' : '#fff'};">${escapeHtml(entry.name)}</td>
-                <td style="padding:12px 5px; text-align:right; font-weight:bold; color:#4dd0e1; font-size:18px;">${entry.score}</td>
+                <td style="padding:10px 5px; font-weight:bold; color:${rankColor}; width:30px; text-align:center; font-size: ${idx < 3 ? '18px' : '14px'};">${rankText}</td>
+                <td style="padding:10px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; font-size:15px; font-weight: ${isMe ? 'bold' : 'normal'}; color: ${isMe ? '#81c784' : '#fff'};">${escapeHtml(entry.name)}</td>
+                <td style="padding:10px 5px; text-align:right; font-weight:bold; color:#4dd0e1; font-size:18px;">${entry.score}</td>
               </tr>
             `;
         });
         html += '</table>';
         contentDiv.innerHTML = html;
+        updateScrollHint();
     };
     
     const escapeHtml = (str) => {
