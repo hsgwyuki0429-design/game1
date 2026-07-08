@@ -54,7 +54,7 @@
       movingPipeScore: 4, movingChance: 0.4, moveAmp: 48, moveSpeed: 1.3,
       slideChance: 0.24, ambushChance: 0.3, shrinkChance: 0.16,
       gravityFlip: true, gravityFlipScore: 4, flipArmDelay: 3.5,
-      flipNormalDur: [6, 3.5], flipReversedDur: [4, 2.5], road: false,
+      flipNormalDur: [6, 3.5], flipReversedDur: [5, 3], road: false,
     },
   };
 
@@ -206,8 +206,8 @@
 
   // 重力反転2秒前から警告を出す
   const GRAVITY_WARN_LEAD = 2.0;
-  // 反転後も2秒間は土管を出さない
-  const GRAVITY_CLEAR_AFTER = 2.0;
+  // 反転直後だけ短く土管を空ける（反転中もちゃんと土管が並ぶように短め）
+  const GRAVITY_CLEAR_AFTER = 1.0;
   // 重力の切り替え前後は再生速度を3/4に落として対応しやすくする（全体スロー）
   const FLIP_TIME_SCALE = 0.75;
 
@@ -775,23 +775,11 @@
         }
       }
 
+      // 反転直後の短いブレイク(noSpawnTimer)以外は、反転中もふつうに土管を出し続ける
       spawnTimer -= dt;
-      if (spawnTimer <= 0) {
-        let willArriveAt = (W + PIPE_WIDTH - bird.x) / speed;
-        let safeToSpawn = true;
-
-        // ★ 土管が鳥に到達するタイミングが「反転前後2秒間」に含まれる場合はスポーンしない
-        if (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0) {
-          let arrivalRelToFlip = gravityPhaseTimer - willArriveAt;
-          if (arrivalRelToFlip >= -2.0 && arrivalRelToFlip <= 2.0) {
-            safeToSpawn = false;
-          }
-        }
-
-        if (safeToSpawn && noSpawnTimer <= 0) {
-          spawnPipe();
-          spawnTimer = PIPE_INTERVAL;
-        }
+      if (spawnTimer <= 0 && noSpawnTimer <= 0) {
+        spawnPipe();
+        spawnTimer = PIPE_INTERVAL;
       }
     }
 
