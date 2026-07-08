@@ -246,33 +246,25 @@ canvas {
   color: #fff;
 }
 
-/* --- 自動操作モード（難易度とは別の括り） --- */
-#mode-select {
-  display: flex;
-  justify-content: center;
-  margin: 0 0 14px;
-}
-
-.mode-btn {
-  font-size: 13px;
-  font-weight: 700;
-  padding: 8px 16px;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+/* --- マッププレビュー中バッジ（スコア非計上であることを明示） --- */
+#preview-badge {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   color: #fff;
-  cursor: pointer;
-  transition: transform 0.05s ease, background 0.15s ease, border-color 0.15s ease;
+  background: rgba(76, 175, 80, 0.85);
+  pointer-events: none;
+  z-index: 5;
 }
 
-.mode-btn:active {
-  transform: translateY(2px);
-}
-
-.mode-btn.active {
-  background: #4caf50;
-  border-color: #81c784;
-  color: #fff;
+#preview-badge.hidden {
+  display: none;
 }
 
 #overlay-sub {

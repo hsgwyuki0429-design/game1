@@ -17,7 +17,9 @@
   const gravityBadge = document.getElementById('gravity-badge');
   const diffButtons = Array.from(document.querySelectorAll('.diff-btn'));
   const overlayInner = document.getElementById('overlay-inner');
-  const menuButtons = Array.from(document.querySelectorAll('.menu-btn'));
+  // レベル選択(プレイ)画面を開閉するのは data-panel を持つメニューボタンだけ。
+  // 「マップを見る」ボタンはプレイ画面の一部ではないため対象外にする。
+  const menuButtons = Array.from(document.querySelectorAll('.menu-btn[data-panel]'));
   const backButtons = Array.from(document.querySelectorAll('[data-back]'));
   const subpanels = {
     char: document.getElementById('panel-char'),
@@ -26,24 +28,25 @@
   };
   const charGrid = document.getElementById('char-grid');
   const pipeGrid = document.getElementById('pipe-grid');
+  const previewBadge = document.getElementById('preview-badge');
 
   // ==========================================
-  // ★ 自動操作モード（難易度とは別の括りのトグルボタン）
-  //   自動操作中は自己ベストやランキングには一切影響しない。
+  // ★ マッププレビュー（旧: 自動操作モード）
+  //   レベル選択・スタートの画面ではオンにできない。チートではなく
+  //   「マップの動きを見るだけ」の独立した機能として、キャラ選択などと
+  //   同じ並びの案内ボタンから1回分のプレビュー走行を開始する。
+  //   プレビュー走行のスコアは自己ベスト・世界ランキングに一切反映しない。
   // ==========================================
-  const autoBtn = document.getElementById('auto-btn');
+  const previewBtn = document.getElementById('preview-btn');
   let isAutoPilot = false;
-  function updateAutoBtn() {
-    autoBtn.textContent = isAutoPilot ? '🤖 自動操作: ON' : '🤖 自動操作: OFF';
-    autoBtn.classList.toggle('active', isAutoPilot);
-  }
-  autoBtn.addEventListener('click', (e) => {
+  previewBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
-    isAutoPilot = !isAutoPilot;
-    updateAutoBtn();
+    isAutoPilot = true;
+    previewBadge.classList.remove('hidden');
+    overlay.classList.add('hidden');
+    startGame();
   });
-  updateAutoBtn();
 
   // ==========================================
   // ★ ランキングボタンの生成と配置
@@ -359,7 +362,7 @@
 
   // これまでにユーザーが残した自己ベストを全難易度ぶん一度だけゼロにリセットする。
   // フラグを立てておくことで、リセットは各ユーザーにつき一回だけ実行される。
-  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v1';
+  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v2';
   if (!localStorage.getItem(BEST_RESET_FLAG)) {
     Object.keys(DIFFICULTIES).forEach(d => localStorage.removeItem(bestKey(d)));
     localStorage.setItem(BEST_RESET_FLAG, '1');
@@ -887,15 +890,20 @@
     spawnShockwave(bird.x, bird.y, '#ff6b6b', 110, 0.4);
     gravityBadge.classList.add('hidden');
 
-    // 自動操作モードのプレイは自己ベストにもランキングにも反映しない。
-    const isNewBest = !isAutoPilot && score > best;
+    // マッププレビュー走行は自己ベストにもランキングにも一切反映しない。
+    const wasPreview = isAutoPilot;
+    const isNewBest = !wasPreview && score > best;
     if (isNewBest) {
       best = score;
       localStorage.setItem(bestKey(difficulty), String(best));
     }
     bestEl.textContent = best;
-    overlayTitle.textContent = 'ゲームオーバー';
-    overlaySub.textContent = `スコア: ${score}`;
+    // プレビューは1回きり。終了したら必ず通常モードへ戻し、
+    // 「もう一度」以降は自動でプレイヤー自身の操作になる。
+    isAutoPilot = false;
+    previewBadge.classList.add('hidden');
+    overlayTitle.textContent = wasPreview ? 'プレビュー終了' : 'ゲームオーバー';
+    overlaySub.textContent = wasPreview ? `マップのプレビューが終わりました（スコア非計上）` : `スコア: ${score}`;
     startBtn.textContent = 'もう一度';
     overlay.classList.remove('hidden');
 

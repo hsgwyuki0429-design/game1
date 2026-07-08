@@ -13,6 +13,7 @@
       <span id="score">0</span>
     </div>
     <div id="gravity-badge" class="hidden"></div>
+    <div id="preview-badge" class="hidden">🗺️ プレビュー中（スコア非計上）</div>
     <div id="overlay">
       <!-- メインメニュー -->
       <div id="overlay-inner" class="panel">
@@ -24,9 +25,6 @@
           <button class="diff-btn" data-diff="insane">鬼</button>
           <button class="diff-btn" data-diff="gravity">重力反転</button>
         </div>
-        <div id="mode-select">
-          <button id="auto-btn" class="mode-btn">🤖 自動操作: OFF</button>
-        </div>
         <p id="overlay-sub">タップ / クリック / スペースキーで羽ばたく</p>
         <p id="best-line">ベスト: <span id="best">0</span></p>
         <button id="start-btn">スタート</button>
@@ -34,6 +32,7 @@
           <button class="menu-btn" data-panel="char">🐤 キャラ選択</button>
           <button class="menu-btn" data-panel="pipe">🟩 土管デザイン</button>
           <button class="menu-btn" data-panel="tutorial">📖 遊び方</button>
+          <button id="preview-btn" class="menu-btn">🗺️ マップを見る（自動プレビュー）</button>
         </div>
       </div>
 
