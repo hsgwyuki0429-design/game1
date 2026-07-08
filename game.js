@@ -22,6 +22,34 @@
   const charGrid = document.getElementById('char-grid');
   const pipeGrid = document.getElementById('pipe-grid');
 
+  // 自動操作用ボタンの追加
+  const wrapper = canvas.parentElement || document.body;
+  const autoBtn = document.createElement('button');
+  autoBtn.textContent = '🤖 自動操作: OFF';
+  autoBtn.style.position = 'absolute';
+  autoBtn.style.top = '10px';
+  autoBtn.style.right = '10px';
+  autoBtn.style.zIndex = '50';
+  autoBtn.style.padding = '8px 12px';
+  autoBtn.style.background = 'rgba(0,0,0,0.5)';
+  autoBtn.style.color = '#fff';
+  autoBtn.style.border = '2px solid rgba(255,255,255,0.4)';
+  autoBtn.style.borderRadius = '8px';
+  autoBtn.style.fontFamily = 'sans-serif';
+  autoBtn.style.fontWeight = 'bold';
+  autoBtn.style.cursor = 'pointer';
+  autoBtn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+  wrapper.appendChild(autoBtn);
+
+  let isAutoPilot = false;
+  autoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isAutoPilot = !isAutoPilot;
+    autoBtn.textContent = isAutoPilot ? '🤖 自動操作: ON' : '🤖 自動操作: OFF';
+    autoBtn.style.background = isAutoPilot ? '#4caf50' : 'rgba(0,0,0,0.5)';
+    autoBtn.style.borderColor = isAutoPilot ? '#2e7d32' : 'rgba(255,255,255,0.4)';
+  });
+
   const W = canvas.width;
   const H = canvas.height;
   const GROUND_H = 80;
@@ -200,7 +228,8 @@
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
-  let roadActive, roadRemaining, roadSpawnTimer, roadPhase, roadCooldown;
+  let roadActive, roadRemaining, roadSpawnTimer, roadPhase, roadCooldown, roadHue;
+  let autoCooldown = 0;
 
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
@@ -272,6 +301,7 @@
     roadRemaining = 0;
     roadSpawnTimer = 0;
     roadPhase = Math.random() * Math.PI * 2;
+    roadHue = 0;
     // 30%の確率で序盤(2〜5秒後)に出現、それ以外は通常通り(10〜15秒後)に出現させる
     roadCooldown = Math.random() < 0.3 ? 2 + Math.random() * 3 : 10 + Math.random() * 5;
 
@@ -279,6 +309,7 @@
     controlChaosTimer = 0;
     controlChaosCooldown = 15;
     combo = 0;
+    autoCooldown = 0;
 
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
@@ -548,7 +579,7 @@
     });
   }
 
-  // カラフルな土管の「道（トンネル）」を作る。すき間の中心がなめらかにうねり、奇襲のように伸びる。
+  // 色とりどりの「道（トンネル）」を作る。すき間の中心がなめらかにうねり、奇襲のように伸びる。
   function spawnRoadPipe() {
     const gap = ROAD_GAP;
     const margin = 46;
@@ -556,10 +587,10 @@
     roadPhase += ROAD_PHASE_STEP;
     const gapY = margin + gap / 2 + (0.5 + 0.5 * Math.sin(roadPhase)) * span;
 
-    // ランダムなスキン（色）を選ぶ
-    const skinKeys = Object.keys(PIPE_SKINS);
-    const randomSkinKey = skinKeys[Math.floor(Math.random() * skinKeys.length)];
-    const roadSkin = PIPE_SKINS[randomSkinKey];
+    roadHue = (roadHue + 25) % 360;
+    const fill = `hsl(${roadHue}, 85%, 60%)`;
+    const stroke = `hsl(${roadHue}, 90%, 35%)`;
+    const cap = `hsl(${roadHue}, 85%, 75%)`;
 
     pipes.push({
       x: W + PIPE_WIDTH,
@@ -577,7 +608,7 @@
       isAmbush: false,
       isBlue: false,
       isRoad: true,
-      roadSkin, // ランダムな色を保持
+      roadSkin: { fill, stroke, cap },
     });
   }
 
@@ -709,7 +740,66 @@
     }
   }
 
+  // オートパイロット用ロジック
+  function doAutoPilot(dt) {
+    if (autoCooldown > 0) autoCooldown -= dt;
+
+    if (state === 'ready' || state === 'gameover') {
+      if (autoCooldown <= 0) {
+        flap();
+        autoCooldown = 1.0;
+      }
+      return;
+    }
+
+    if (state !== 'playing' || autoCooldown > 0) return;
+
+    const doFlap = () => {
+      flap();
+      autoCooldown = 0.12; // 連続タップを防ぐ間隔
+    };
+
+    let nextPipe = null;
+    for (const p of pipes) {
+      if (p.x + PIPE_WIDTH > bird.x - bird.r) {
+        nextPipe = p;
+        break;
+      }
+    }
+
+    if (controlChaosMode) {
+      // 自分で重力反転するモードの場合は、土管を避けるように反転
+      if (nextPipe) {
+        if (gravityDir === 1 && bird.y > nextPipe.gapY + 15) doFlap();
+        else if (gravityDir === -1 && bird.y < nextPipe.gapY - 15) doFlap();
+      } else {
+        if (gravityDir === 1 && bird.y > H / 2 + 40) doFlap();
+        else if (gravityDir === -1 && bird.y < H / 2 - 40) doFlap();
+      }
+      return;
+    }
+
+    if (nextPipe) {
+      let targetY = nextPipe.gapY;
+      // 重力の向きに合わせて、ターゲットYより下に（上に）落ちすぎたら飛ぶ
+      if (gravityDir === 1) {
+        if (bird.y > targetY + 15 && bird.vy >= -30) doFlap();
+      } else {
+        if (bird.y < targetY - 15 && bird.vy <= 30) doFlap();
+      }
+    } else {
+      // 土管がない場合は画面中央付近を維持
+      if (gravityDir === 1) {
+        if (bird.y > H / 2 + 20 && bird.vy >= 0) doFlap();
+      } else {
+        if (bird.y < H / 2 - 20 && bird.vy <= 0) doFlap();
+      }
+    }
+  }
+
   function update(dt) {
+    if (isAutoPilot) doAutoPilot(dt);
+
     if (state !== 'playing') return;
 
     elapsed += dt;
@@ -767,7 +857,7 @@
         if (roadRemaining <= 0) {
           roadActive = false;
           roadCooldown = ROAD_COOLDOWN_MIN + Math.random() * (ROAD_COOLDOWN_MAX - ROAD_COOLDOWN_MIN);
-          spawnTimer = PIPE_INTERVAL * 1.3; // 道の後は少し間を空ける
+          spawnTimer = PIPE_INTERVAL * 1.5; // ★道の後にも通常土管まで十分な間隔を空ける
         }
       }
     } else {
@@ -777,15 +867,16 @@
         if (roadCooldown <= 0) {
           roadActive = true;
           roadRemaining = ROAD_COUNT;
-          roadSpawnTimer = 0;
+          roadSpawnTimer = PIPE_INTERVAL * 1.5; // ★開始前にも通常土管から十分な間隔を空ける
+          roadHue = Math.random() * 360; // 新しい虹色のスタート地点
           spawnFloater(W / 2, H / 2 - 60, '🌈 ロード!', '#ffca28', 1.5);
           beep({ freq: 660, glideTo: 990, duration: 0.18, type: 'triangle', volume: 0.12 });
         }
       }
 
-      // 反転直後の短いブレイク(noSpawnTimer)以外は、反転中もふつうに土管を出し続ける
+      // roadActiveが発動した直後はspawnTimerのカウントを進めず、通常土管を出さない
       spawnTimer -= dt;
-      if (spawnTimer <= 0 && noSpawnTimer <= 0) {
+      if (spawnTimer <= 0 && noSpawnTimer <= 0 && !roadActive) {
         spawnPipe();
         spawnTimer = PIPE_INTERVAL;
       }
@@ -936,7 +1027,7 @@
       }
 
       if (p.isRoad) {
-        // 「道」を作る土管はそれぞれランダムな色
+        // 「道」を作る土管はそれぞれ虹色で生成された色
         ctx.fillStyle = p.roadSkin.fill;
         ctx.strokeStyle = p.roadSkin.stroke;
       } else if (p.isShrink) {
