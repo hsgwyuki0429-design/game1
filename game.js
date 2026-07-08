@@ -726,7 +726,9 @@
     }
   }
 
-  // オートパイロット用ロジック（微調整）
+  // ==========================================
+  // ★ オートパイロット用ロジック（神エイム化）
+  // ==========================================
   function doAutoPilot(dt) {
     if (autoCooldown > 0) autoCooldown -= dt;
 
@@ -742,9 +744,11 @@
 
     const doFlap = () => {
       flap();
-      autoCooldown = 0.15; // 連続タップを防ぐ間隔
+      // 連続タップによる暴発を防ぎつつ、素早い反応ができる短い間隔
+      autoCooldown = 0.08; 
     };
 
+    // 次に越えなければならない土管を見つける
     let nextPipe = null;
     for (const p of pipes) {
       if (p.x + PIPE_WIDTH > bird.x - bird.r) {
@@ -753,29 +757,44 @@
       }
     }
 
+    // 重力と現在の速度から「0.12秒後の未来のY位置」を計算
+    let t = 0.12;
+    let futureY = bird.y + bird.vy * t + 0.5 * (cfg.gravity * gravityDir) * t * t;
+
+    // 特殊：自分で重力反転を行う警告モードの時
     if (controlChaosMode) {
       if (nextPipe) {
-        if (gravityDir === 1 && bird.y > nextPipe.gapY + 15) doFlap();
-        else if (gravityDir === -1 && bird.y < nextPipe.gapY - 15) doFlap();
+        // 通常重力で落下中、目標地点より下に行きそうなら反転して昇る
+        if (gravityDir === 1 && futureY > nextPipe.gapY + 15) doFlap();
+        // 反転重力で上昇中、目標地点より上に行きそうなら反転して落ちる
+        else if (gravityDir === -1 && futureY < nextPipe.gapY - 15) doFlap();
       } else {
-        if (gravityDir === 1 && bird.y > H / 2 + 40) doFlap();
-        else if (gravityDir === -1 && bird.y < H / 2 - 40) doFlap();
+        // 土管がない場合は画面中央をキープ
+        if (gravityDir === 1 && futureY > H / 2 + 30) doFlap();
+        else if (gravityDir === -1 && futureY < H / 2 - 30) doFlap();
       }
-      return;
+      return; // 特殊モードの時はこれで終了
     }
 
+    // 通常時のエイム
     if (nextPipe) {
-      let targetY = nextPipe.gapY;
+      // ターゲットとするY座標。
+      // ジャンプすると勢いよく逆方向に進むので、隙間の中心から「重力が引く方向」に少し寄せた位置を狙う。
+      let targetY = nextPipe.gapY + (gravityDir === 1 ? nextPipe.gap * 0.25 : -nextPipe.gap * 0.25);
+
       if (gravityDir === 1) {
-        if (bird.y > targetY + 12 && bird.vy >= -40) doFlap();
+        // 未来位置がターゲットより下、または地面に激突しそうなら飛ぶ
+        if (futureY > targetY || futureY > H - GROUND_H - bird.r - 5) doFlap();
       } else {
-        if (bird.y < targetY - 12 && bird.vy <= 40) doFlap();
+        // 反転重力：未来位置がターゲットより上、または天井に激突しそうなら飛ぶ
+        if (futureY < targetY || futureY < bird.r + 5) doFlap();
       }
     } else {
+      // 土管がない場合は画面中央付近を維持
       if (gravityDir === 1) {
-        if (bird.y > H / 2 + 20 && bird.vy >= 0) doFlap();
+        if (futureY > H / 2 + 20) doFlap();
       } else {
-        if (bird.y < H / 2 - 20 && bird.vy <= 0) doFlap();
+        if (futureY < H / 2 - 20) doFlap();
       }
     }
   }
@@ -829,9 +848,6 @@
 
     if (noSpawnTimer > 0) noSpawnTimer = Math.max(0, noSpawnTimer - dt);
 
-    // ==========================================
-    // ★ ロードイベントの出現タイミング調整
-    // ==========================================
     if (roadActive) {
       roadSpawnTimer -= dt;
       if (roadSpawnTimer <= 0 && roadRemaining > 0) {
@@ -841,7 +857,7 @@
         if (roadRemaining <= 0) {
           roadActive = false;
           roadCooldown = ROAD_COOLDOWN_MIN + Math.random() * (ROAD_COOLDOWN_MAX - ROAD_COOLDOWN_MIN);
-          spawnTimer = PIPE_INTERVAL * 1.2; // 終了後は少しだけ余裕を持たせる
+          spawnTimer = PIPE_INTERVAL * 1.2; 
         }
       }
     } else {
@@ -852,7 +868,6 @@
       spawnTimer -= dt;
       if (spawnTimer <= 0 && noSpawnTimer <= 0 && !roadActive) {
         if (cfg.road && roadCooldown <= 0 && gravityDir === 1 && !gravityWarn) {
-          // ★ 通常の土管が出るタイミングで、代わりにロードの1本目を即座に出す
           roadActive = true;
           roadRemaining = ROAD_COUNT;
           
@@ -860,7 +875,7 @@
           spawnFloater(W / 2, H / 2 - 60, '🌈 ロード!', '#ffca28', 1.5);
           beep({ freq: 660, glideTo: 990, duration: 0.18, type: 'triangle', volume: 0.12 });
 
-          spawnRoadPipe(true); // 1本目
+          spawnRoadPipe(true); 
           roadRemaining--;
           roadSpawnTimer = ROAD_INTERVAL;
         } else {
