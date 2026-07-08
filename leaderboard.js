@@ -117,11 +117,15 @@ if (isConfigured(cfg)) {
       await signInAnonymously(auth);
       await authReady;
 
-      // 難易度ごとに別コレクション（leaderboard-normal など）に分け、
+      // 難易度ごとに別コレクション（leaderboard-normal-v2 など）に分け、
       // ドキュメントID = uid で「1人1難易度につき1件」だけ保持する。
       // 取得はスコア降順 + limit(TOP_N) で上位だけ読む
       // （単一フィールドの自動インデックスで動くため複合インデックス不要）。
-      const colRef = (diff) => collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard-' + diff);
+      //
+      // LB_VERSION を上げると、削除権限なしでも「世界ランキングの一斉リセット」が
+      // できる（旧コレクションを読み書きしなくなり、新しい空のコレクションから始まる）。
+      const LB_VERSION = 'v2';
+      const colRef = (diff) => collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard-' + diff + '-' + LB_VERSION);
 
       // 難易度ごとの取得結果キャッシュ（タブ切り替えのたびに再取得しない）
       const cache = new Map(); // diff -> { t: 取得時刻, data: [...] }
