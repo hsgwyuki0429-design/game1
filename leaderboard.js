@@ -17,6 +17,12 @@ const UID_KEY   = 'flappy-byte-uid';
 const MAX_KEEP  = 200; // ローカル保存で保持する最大件数
 const TOP_N     = 50;  // 表示する上位件数
 
+// 「みんなのベスト」一括リセットの基準時刻。
+// これより前に登録されたスコアはランキングに表示しない（＝全員のベストをゼロからに戻す）。
+// Firestore のセキュリティルール上クライアントからは過去データを削除できないため、
+// この基準時刻で「新シーズン」として扱い、全ユーザーの表示を即リセットする。
+const RESET_BEFORE = Date.UTC(2026, 6, 8, 0, 0, 0); // 2026-07-08 00:00 UTC
+
 function ensureUid() {
   let u = null;
   try { u = localStorage.getItem(UID_KEY); } catch (e) {}
@@ -54,7 +60,7 @@ const localBackend = {
   },
   async top(diff) {
     return readLocal()
-      .filter(e => e.difficulty === diff)
+      .filter(e => e.difficulty === diff && (e.timestamp || 0) >= RESET_BEFORE)
       .sort((a, b) => b.score - a.score)
       .slice(0, TOP_N);
   },
@@ -120,7 +126,7 @@ if (isConfigured(cfg)) {
         const out = [];
         snap.forEach(d => {
           const x = d.data();
-          if (x.difficulty === diff) out.push(x);
+          if (x.difficulty === diff && (x.timestamp || 0) >= RESET_BEFORE) out.push(x);
         });
         out.sort((a, b) => b.score - a.score);
         return out.slice(0, TOP_N);
