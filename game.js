@@ -22,32 +22,38 @@
   const charGrid = document.getElementById('char-grid');
   const pipeGrid = document.getElementById('pipe-grid');
 
-  // 自動操作用ボタンの追加
+  // ==========================================
+  // ★ 自動操作ボタンの生成と配置
+  // ==========================================
   const autoBtn = document.createElement('button');
   autoBtn.textContent = '🤖 自動操作: OFF';
-  autoBtn.style.position = 'absolute';
-  autoBtn.style.top = '10px';
-  autoBtn.style.right = '10px';
-  autoBtn.style.zIndex = '9999'; // 最前面に表示
-  autoBtn.style.padding = '8px 12px';
-  autoBtn.style.background = 'rgba(0,0,0,0.5)';
+  autoBtn.style.position = 'fixed';
+  autoBtn.style.top = '20px';
+  autoBtn.style.right = '20px';
+  autoBtn.style.zIndex = '999999';
+  autoBtn.style.padding = '10px 15px';
+  autoBtn.style.background = 'rgba(0,0,0,0.7)';
   autoBtn.style.color = '#fff';
-  autoBtn.style.border = '2px solid rgba(255,255,255,0.4)';
-  autoBtn.style.borderRadius = '8px';
+  autoBtn.style.border = '2px solid rgba(255,255,255,0.6)';
+  autoBtn.style.borderRadius = '12px';
   autoBtn.style.fontFamily = 'sans-serif';
   autoBtn.style.fontWeight = 'bold';
+  autoBtn.style.fontSize = '14px';
   autoBtn.style.cursor = 'pointer';
-  autoBtn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-  stage.appendChild(autoBtn);
+  autoBtn.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
+  autoBtn.style.transition = 'background 0.2s, border-color 0.2s';
+  document.body.appendChild(autoBtn);
 
   let isAutoPilot = false;
   autoBtn.addEventListener('click', (e) => {
-    e.stopPropagation(); // ゲームのタップ判定に影響しないようにする
+    e.stopPropagation();
+    e.preventDefault();
     isAutoPilot = !isAutoPilot;
     autoBtn.textContent = isAutoPilot ? '🤖 自動操作: ON' : '🤖 自動操作: OFF';
-    autoBtn.style.background = isAutoPilot ? '#4caf50' : 'rgba(0,0,0,0.5)';
-    autoBtn.style.borderColor = isAutoPilot ? '#2e7d32' : 'rgba(255,255,255,0.4)';
+    autoBtn.style.background = isAutoPilot ? '#4caf50' : 'rgba(0,0,0,0.7)';
+    autoBtn.style.borderColor = isAutoPilot ? '#81c784' : 'rgba(255,255,255,0.6)';
   });
+  // ==========================================
 
   const W = canvas.width;
   const H = canvas.height;
@@ -56,7 +62,6 @@
   const PIPE_INTERVAL = 1.4;
 
   const DIFFICULTIES = {
-    // ノーマル/ハード/鬼：重力反転なし。特殊土管をどんどん出す
     normal: {
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
       movingPipeScore: 4, movingChance: 0.4, moveAmp: 40, moveSpeed: 1.1,
@@ -75,7 +80,6 @@
       slideChance: 0.5, ambushChance: 0.55, shrinkChance: 0.4,
       gravityFlip: false, road: true,
     },
-    // 重力反転はこの専用レベルだけに登場
     gravity: {
       label: '重力反転', gravity: 1650, flap: -450, gapBase: 150, gapMin: 110, baseSpeed: 200,
       movingPipeScore: 4, movingChance: 0.4, moveAmp: 48, moveSpeed: 1.3,
@@ -232,29 +236,23 @@
 
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
 
-  // 重力反転2秒前から警告を出す
   const GRAVITY_WARN_LEAD = 2.0;
-  // 反転直後だけ短く土管を空ける（反転中もちゃんと土管が並ぶように短め）
   const GRAVITY_CLEAR_AFTER = 1.0;
-  // 重力の切り替え前後は再生速度を3/4に落として対応しやすくする（全体スロー）
   const FLIP_TIME_SCALE = 0.75;
 
-  // 「道（トンネル）」イベント
-  const ROAD_GAP = 150;          // 道のすき間の高さ（広め）
-  const ROAD_INTERVAL = 0.3;     // 土管どうしの間隔（秒）＝詰めて出して道にする
-  const ROAD_COUNT = 16;         // 1回の道を構成する土管の数
-  const ROAD_PHASE_STEP = 0.32;  // 道のうねり具合（大きいほど急カーブ）
-  const ROAD_COOLDOWN_MIN = 15;     // 次の道までの最短（秒）
-  const ROAD_COOLDOWN_MAX = 24;     // 次の道までの最長（秒）
+  const ROAD_GAP = 150;
+  const ROAD_INTERVAL = 0.3;
+  const ROAD_COUNT = 16;
+  const ROAD_PHASE_STEP = 0.32;
+  const ROAD_COOLDOWN_MIN = 15;
+  const ROAD_COOLDOWN_MAX = 24;
 
-  // 奇襲＆ロード土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
-  // 伸びる進行度は土管のx位置で決める（速度に依らず一定の場所で開ききる）。
-  const AMBUSH_GROW_START_X = W * 0.95; // 画面に入ってすぐ伸び始める
-  const AMBUSH_GROW_END_X = W * 0.42;   // ここまでに伸びきってすき間が判明する
+  const AMBUSH_GROW_START_X = W * 0.95;
+  const AMBUSH_GROW_END_X = W * 0.42;
   function ambushGrow(p) {
     const t = (AMBUSH_GROW_START_X - p.x) / (AMBUSH_GROW_START_X - AMBUSH_GROW_END_X);
     const c = Math.max(0, Math.min(1, t));
-    return c * c; // 序盤はゆっくり、終盤で一気に伸びてすき間が現れる
+    return c * c;
   }
 
   function initClouds() {
@@ -301,7 +299,6 @@
     roadSpawnTimer = 0;
     roadPhase = Math.random() * Math.PI * 2;
     roadHue = 0;
-    // 30%の確率で序盤(2〜5秒後)に出現、それ以外は通常通り(10〜15秒後)に出現させる
     roadCooldown = Math.random() < 0.3 ? 2 + Math.random() * 3 : 10 + Math.random() * 5;
 
     controlChaosMode = false;
@@ -535,26 +532,18 @@
 
   function spawnPipe() {
     const gap = currentGap();
-
-    // 特殊土管は種類を排他的に決める（1本につき1種類）
     const isSlideX = score >= 8 && Math.random() < cfg.slideChance;
-    // ⑤ 奇襲（上下の土管が伸びて、最後にすき間の位置が現れる）
     const isAmbush = !isSlideX && score >= 12 && Math.random() < cfg.ambushChance;
-    // ⑥ シュリンク（近づくにつれてすき間が狭まる）
     const isShrink = !isSlideX && !isAmbush && score >= 6 && Math.random() < (cfg.shrinkChance || 0);
-    const canMove = !isSlideX && !isAmbush && !isShrink &&
-                    score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
+    const canMove = !isSlideX && !isAmbush && !isShrink && score >= cfg.movingPipeScore && Math.random() < cfg.movingChance;
 
     const moveAmp = canMove ? cfg.moveAmp * (0.6 + Math.random() * 0.6) : 0;
     const margin = 40 + moveAmp;
 
-    // シュリンクは最初のすき間が広いので、配置の余裕も広い方で確保する
     const shrinkStart = gap + 95;
     const layoutGap = isShrink ? shrinkStart : gap;
     const span = Math.max(20, H - GROUND_H - margin * 2 - layoutGap);
-
-    const isBlue = gravityDir === -1; // 重力反転レベルで反転中のみ青くなる
-
+    const isBlue = gravityDir === -1; 
     let baseGapY = margin + Math.random() * span + layoutGap / 2;
 
     pipes.push({
@@ -578,8 +567,6 @@
     });
   }
 
-  // 色とりどりの「道（トンネル）」を作る。
-  // isStart が true の場合（トンネルの1本目）は、奇襲のように伸びず、最初からすき間が見えている状態になる。
   function spawnRoadPipe(isStart) {
     const gap = ROAD_GAP;
     const margin = 46;
@@ -608,7 +595,7 @@
       isAmbush: false,
       isBlue: false,
       isRoad: true,
-      isRoadStart: isStart, // ★ 最初の1本目かどうかのフラグ
+      isRoadStart: isStart, 
       roadSkin: { fill, stroke, cap },
     });
   }
@@ -619,7 +606,6 @@
       return;
     }
     if (state === 'playing') {
-      
       if (controlChaosMode) {
         gravityDir *= -1;
         bird.vy = 0;
@@ -695,9 +681,9 @@
   }
 
   function updateGravityFlip(dt) {
-    if (!cfg.gravityFlip) return; // 重力反転はこの機能を持つレベルだけ
+    if (!cfg.gravityFlip) return; 
     if (controlChaosMode) return;
-    if (roadActive) return; // 「道」イベント中は重力を反転させない（安定した重力で駆け抜ける）
+    if (roadActive) return; 
 
     if (!gravityArmed) {
       if (score >= cfg.gravityFlipScore) {
@@ -718,7 +704,6 @@
       gravityDir *= -1;
       gravityWarn = false;
 
-      // 反転時間が際限なく伸びると「ずっと反転」で単調になるので、上乗せは控えめに上限つき
       const levelBonus = Math.min(2, Math.floor(score / 10) * 0.5);
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
 
@@ -741,7 +726,7 @@
     }
   }
 
-  // オートパイロット用ロジック
+  // オートパイロット用ロジック（微調整）
   function doAutoPilot(dt) {
     if (autoCooldown > 0) autoCooldown -= dt;
 
@@ -757,7 +742,7 @@
 
     const doFlap = () => {
       flap();
-      autoCooldown = 0.12; // 連続タップを防ぐ間隔
+      autoCooldown = 0.15; // 連続タップを防ぐ間隔
     };
 
     let nextPipe = null;
@@ -769,7 +754,6 @@
     }
 
     if (controlChaosMode) {
-      // 自分で重力反転するモードの場合は、土管を避けるように反転
       if (nextPipe) {
         if (gravityDir === 1 && bird.y > nextPipe.gapY + 15) doFlap();
         else if (gravityDir === -1 && bird.y < nextPipe.gapY - 15) doFlap();
@@ -782,14 +766,12 @@
 
     if (nextPipe) {
       let targetY = nextPipe.gapY;
-      // 重力の向きに合わせて、ターゲットYより下に（上に）落ちすぎたら飛ぶ
       if (gravityDir === 1) {
-        if (bird.y > targetY + 15 && bird.vy >= -30) doFlap();
+        if (bird.y > targetY + 12 && bird.vy >= -40) doFlap();
       } else {
-        if (bird.y < targetY - 15 && bird.vy <= 30) doFlap();
+        if (bird.y < targetY - 12 && bird.vy <= 40) doFlap();
       }
     } else {
-      // 土管がない場合は画面中央付近を維持
       if (gravityDir === 1) {
         if (bird.y > H / 2 + 20 && bird.vy >= 0) doFlap();
       } else {
@@ -847,40 +829,44 @@
 
     if (noSpawnTimer > 0) noSpawnTimer = Math.max(0, noSpawnTimer - dt);
 
-    // 「道（トンネル）」イベントの管理（ハード・鬼）
+    // ==========================================
+    // ★ ロードイベントの出現タイミング調整
+    // ==========================================
     if (roadActive) {
-      // 道の最中は詰めた間隔で土管を出し続ける
       roadSpawnTimer -= dt;
       if (roadSpawnTimer <= 0 && roadRemaining > 0) {
-        // ★ 最初の一本目（roadRemaining === ROAD_COUNT）だけは、isStart フラグを true で渡す
         spawnRoadPipe(roadRemaining === ROAD_COUNT);
         roadRemaining--;
         roadSpawnTimer = ROAD_INTERVAL;
         if (roadRemaining <= 0) {
           roadActive = false;
           roadCooldown = ROAD_COOLDOWN_MIN + Math.random() * (ROAD_COOLDOWN_MAX - ROAD_COOLDOWN_MIN);
-          spawnTimer = PIPE_INTERVAL * 1.5; // ★道の後にも通常土管まで十分な間隔を空ける
+          spawnTimer = PIPE_INTERVAL * 1.2; // 終了後は少しだけ余裕を持たせる
         }
       }
     } else {
-      // 道イベントの発動判定（重力が通常向きで安定しているときだけ）
       if (cfg.road && score >= 1 && gravityDir === 1 && !gravityWarn && noSpawnTimer <= 0) {
         roadCooldown -= dt;
-        if (roadCooldown <= 0) {
-          roadActive = true;
-          roadRemaining = ROAD_COUNT;
-          roadSpawnTimer = PIPE_INTERVAL * 1.5; // ★開始前にも通常土管から十分な間隔を空ける
-          roadHue = Math.random() * 360; // 新しい虹色のスタート地点
-          spawnFloater(W / 2, H / 2 - 60, '🌈 ロード!', '#ffca28', 1.5);
-          beep({ freq: 660, glideTo: 990, duration: 0.18, type: 'triangle', volume: 0.12 });
-        }
       }
 
-      // roadActiveが発動した直後はspawnTimerのカウントを進めず、通常土管を出さない
       spawnTimer -= dt;
       if (spawnTimer <= 0 && noSpawnTimer <= 0 && !roadActive) {
-        spawnPipe();
-        spawnTimer = PIPE_INTERVAL;
+        if (cfg.road && roadCooldown <= 0 && gravityDir === 1 && !gravityWarn) {
+          // ★ 通常の土管が出るタイミングで、代わりにロードの1本目を即座に出す
+          roadActive = true;
+          roadRemaining = ROAD_COUNT;
+          
+          roadHue = Math.random() * 360; 
+          spawnFloater(W / 2, H / 2 - 60, '🌈 ロード!', '#ffca28', 1.5);
+          beep({ freq: 660, glideTo: 990, duration: 0.18, type: 'triangle', volume: 0.12 });
+
+          spawnRoadPipe(true); // 1本目
+          roadRemaining--;
+          roadSpawnTimer = ROAD_INTERVAL;
+        } else {
+          spawnPipe();
+          spawnTimer = PIPE_INTERVAL;
+        }
       }
     }
 
@@ -889,7 +875,6 @@
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
 
-      // ⑥ シュリンク：接近するにつれて、広いすき間が通常のすき間まで狭まる
       if (p.isShrink) {
         const t = Math.max(0, Math.min(1, (W - p.x) / (W - W * 0.3)));
         p.gap = p.shrinkStart + (p.gapFinal - p.shrinkStart) * t;
@@ -961,7 +946,6 @@
         let topH = p.gapY - p.gap / 2;
         let botY = p.gapY + p.gap / 2;
         
-        // 奇襲土管、または「最初の1本目ではないロード土管」の場合は伸びる
         if (p.isAmbush || (p.isRoad && !p.isRoadStart)) {
           const e = ambushGrow(p);
           topH = (p.gapY - p.gap / 2) * e;
@@ -1024,7 +1008,6 @@
       let topH = p.gapY - p.gap / 2;
       let botY = p.gapY + p.gap / 2;
       
-      // 奇襲土管、または「最初の1本目ではないロード土管」の場合は伸びるアニメーションを描画
       if (p.isAmbush || (p.isRoad && !p.isRoadStart)) {
         const e = ambushGrow(p);
         topH = (p.gapY - p.gap / 2) * e;
@@ -1032,11 +1015,9 @@
       }
 
       if (p.isRoad) {
-        // 「道」を作る土管はそれぞれ虹色で生成された色
         ctx.fillStyle = p.roadSkin.fill;
         ctx.strokeStyle = p.roadSkin.stroke;
       } else if (p.isShrink) {
-        // 近づくと狭まる赤い土管
         ctx.fillStyle = '#ef5350';
         ctx.strokeStyle = '#c62828';
       } else if (p.isAmbush) {
@@ -1076,7 +1057,6 @@
         ctx.fillStyle = p.moving ? pipeSkin.mCap : pipeSkin.cap;
       }
 
-      // 伸びていない土管には縁（キャップ）を描かない（伸び始め対策）
       if (topHeight > 0.5) {
         ctx.fillRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
         ctx.strokeRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
@@ -1306,7 +1286,6 @@
     }
   }
 
-  // 重力の切り替え前後（反転2秒前〜復帰直後の土管停止中）は再生速度を落とす
   function flipTimeScale() {
     if (state !== 'playing') return 1;
     const inFlipWindow =
