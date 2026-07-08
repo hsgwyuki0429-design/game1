@@ -188,7 +188,11 @@
       localStorage.setItem('flappy-byte-player-name', name);
       box.innerHTML = `<div style="padding:20px;"><h3 style="color:#4caf50; margin:0;">🌐 登録中...</h3></div>`;
       currentLbDiff = diff;
-      await window.LB.save(name, newScore, diff);
+      try {
+        await window.LB.save(name, newScore, diff);
+      } catch (err) {
+        console.warn('[leaderboard] スコアの登録に失敗しました:', err);
+      }
       cleanup();
       // 登録後にランキングを表示してあげる
       showLeaderboardModal();
@@ -261,9 +265,18 @@
     
     const contentDiv = box.querySelector('#lb-content');
     
+    let loadSeq = 0; // タブ連打時に古い結果で上書きされないようにする
     const loadData = async (diff) => {
+        const seq = ++loadSeq;
         contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>';
-        const data = await window.LB.top(diff);
+        let data;
+        try {
+            data = await window.LB.top(diff);
+        } catch (e) {
+            if (seq === loadSeq) contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#e57373;">読み込みに失敗しました。通信環境を確認してください。</div>';
+            return;
+        }
+        if (seq !== loadSeq) return;
         if (data.length === 0) {
             contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">まだ記録がありません</div>';
             return;
