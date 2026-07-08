@@ -1,3 +1,74 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// ==========================================
+// ★ Firebase (オンラインランキング用) の初期化
+// ==========================================
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { projectId: "dummy-project" };
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'flappy-byte-default';
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let currentUser = null;
+const initAuth = async () => {
+    try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+            await signInAnonymously(auth);
+        }
+    } catch (e) {
+        console.error("Auth error", e);
+    }
+};
+initAuth();
+onAuthStateChanged(auth, user => {
+    currentUser = user;
+});
+
+// リーダーボードデータの保存
+async function saveScoreToDB(name, score, diff) {
+    if (!currentUser) return;
+    try {
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+        await addDoc(colRef, {
+            name: name || "名無し",
+            score: score,
+            difficulty: diff,
+            timestamp: Date.now(),
+            uid: currentUser.uid
+        });
+    } catch (e) {
+        console.error("Error saving score:", e);
+    }
+}
+
+// リーダーボードデータの取得
+async function getLeaderboard(diff) {
+    if (!currentUser) return [];
+    try {
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+        const snapshot = await getDocs(colRef);
+        let results = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.difficulty === diff) {
+                results.push(data);
+            }
+        });
+        // スコアが高い順にソート
+        results.sort((a, b) => b.score - a.score);
+        return results.slice(0, 50); // 上位50位まで取得
+    } catch (e) {
+        console.error("Error fetching leaderboard:", e);
+        return [];
+    }
+}
+
+
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -53,7 +124,35 @@
     autoBtn.style.background = isAutoPilot ? '#4caf50' : 'rgba(0,0,0,0.7)';
     autoBtn.style.borderColor = isAutoPilot ? '#81c784' : 'rgba(255,255,255,0.6)';
   });
+
   // ==========================================
+  // ★ ランキングボタンの生成と配置
+  // ==========================================
+  const lbBtn = document.createElement('button');
+  lbBtn.innerHTML = '🏆 ランキング';
+  lbBtn.style.position = 'fixed';
+  lbBtn.style.top = '70px'; // 自動操作ボタンの下に配置
+  lbBtn.style.right = '20px';
+  lbBtn.style.zIndex = '999999';
+  lbBtn.style.padding = '10px 15px';
+  lbBtn.style.background = 'rgba(0,0,0,0.7)';
+  lbBtn.style.color = '#fff';
+  lbBtn.style.border = '2px solid rgba(255,215,0,0.6)';
+  lbBtn.style.borderRadius = '12px';
+  lbBtn.style.fontFamily = 'sans-serif';
+  lbBtn.style.fontWeight = 'bold';
+  lbBtn.style.fontSize = '14px';
+  lbBtn.style.cursor = 'pointer';
+  lbBtn.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
+  lbBtn.style.transition = 'background 0.2s, border-color 0.2s';
+  document.body.appendChild(lbBtn);
+  
+  lbBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showLeaderboardModal();
+  });
+
 
   const W = canvas.width;
   const H = canvas.height;
@@ -88,6 +187,213 @@
       flipNormalDur: [6, 3.5], flipReversedDur: [5, 3], road: false,
     },
   };
+
+  // ==========================================
+  // ★ モーダルUI (名前入力 ＆ ランキング)
+  // ==========================================
+  
+  // フラグなどのクリックイベントが貫通しないようにストップする関数
+  const stopEvent = (e) => {
+      e.stopPropagation();
+  };
+
+  function showNameInputModal(newScore, diff) {
+    const savedName = localStorage.getItem('flappy-byte-player-name') || '';
+    
+    const overlayDiv = document.createElement('div');
+    overlayDiv.style.position = 'fixed';
+    overlayDiv.style.top = '0';
+    overlayDiv.style.left = '0';
+    overlayDiv.style.width = '100%';
+    overlayDiv.style.height = '100%';
+    overlayDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
+    overlayDiv.style.zIndex = '1000000';
+    overlayDiv.style.display = 'flex';
+    overlayDiv.style.justifyContent = 'center';
+    overlayDiv.style.alignItems = 'center';
+    overlayDiv.style.backdropFilter = 'blur(4px)';
+    
+    // イベント貫通防止
+    overlayDiv.addEventListener('pointerdown', stopEvent);
+    overlayDiv.addEventListener('touchstart', stopEvent);
+    overlayDiv.addEventListener('click', stopEvent);
+    window.addEventListener('keydown', stopEvent, { capture: true });
+    
+    const box = document.createElement('div');
+    box.style.background = '#333';
+    box.style.padding = '30px';
+    box.style.borderRadius = '15px';
+    box.style.textAlign = 'center';
+    box.style.color = '#fff';
+    box.style.fontFamily = 'sans-serif';
+    box.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+    box.style.border = '3px solid #ffd166';
+    box.style.animation = 'popIn 0.4s ease-out forwards';
+    
+    // アニメーション用スタイル定義
+    if(!document.getElementById('ranking-styles')) {
+        const style = document.createElement('style');
+        style.id = 'ranking-styles';
+        style.innerHTML = `
+            @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+            .lb-tab-btn:hover { opacity: 0.8; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    box.innerHTML = `
+      <h2 style="margin-top:0; color:#ffd166; font-size:24px;">🏆 新記録達成！</h2>
+      <p style="font-size:18px; margin-bottom:20px;">スコア: <strong style="font-size:24px; color:#4dd0e1;">${newScore}</strong> <br><span style="font-size:14px; color:#aaa;">(${DIFFICULTIES[diff].label}モード)</span></p>
+      <input type="text" id="player-name-input" placeholder="あなたの名前" value="${savedName}" maxlength="15" style="padding:12px; font-size:18px; width:80%; max-width:250px; margin-bottom:20px; border-radius:8px; border:none; outline:none; text-align:center;">
+      <br>
+      <div style="display:flex; justify-content:center; gap:10px;">
+          <button id="save-score-btn" style="padding:12px 24px; background:#4caf50; color:#fff; border:none; border-radius:8px; font-size:16px; cursor:pointer; font-weight:bold;">保存して登録</button>
+          <button id="skip-score-btn" style="padding:12px 24px; background:#757575; color:#fff; border:none; border-radius:8px; font-size:16px; cursor:pointer; font-weight:bold;">スキップ</button>
+      </div>
+    `;
+    
+    overlayDiv.appendChild(box);
+    document.body.appendChild(overlayDiv);
+    
+    const input = box.querySelector('#player-name-input');
+    input.focus();
+    
+    const cleanup = () => {
+        document.body.removeChild(overlayDiv);
+        window.removeEventListener('keydown', stopEvent, { capture: true });
+    };
+
+    box.querySelector('#save-score-btn').addEventListener('click', async () => {
+      const name = input.value.trim() || '名無し';
+      localStorage.setItem('flappy-byte-player-name', name);
+      box.innerHTML = `<div style="padding:20px;"><h3 style="color:#4caf50; margin:0;">🌐 登録中...</h3></div>`;
+      await saveScoreToDB(name, newScore, diff);
+      cleanup();
+      // 登録後にランキングを表示してあげる
+      showLeaderboardModal();
+    });
+    
+    box.querySelector('#skip-score-btn').addEventListener('click', cleanup);
+  }
+
+  let currentLbDiff = difficulty;
+  function showLeaderboardModal() {
+    const overlayDiv = document.createElement('div');
+    overlayDiv.style.position = 'fixed';
+    overlayDiv.style.top = '0';
+    overlayDiv.style.left = '0';
+    overlayDiv.style.width = '100%';
+    overlayDiv.style.height = '100%';
+    overlayDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+    overlayDiv.style.zIndex = '1000000';
+    overlayDiv.style.display = 'flex';
+    overlayDiv.style.justifyContent = 'center';
+    overlayDiv.style.alignItems = 'center';
+    overlayDiv.style.backdropFilter = 'blur(4px)';
+    
+    // イベント貫通防止
+    overlayDiv.addEventListener('pointerdown', stopEvent);
+    overlayDiv.addEventListener('touchstart', stopEvent);
+    overlayDiv.addEventListener('click', stopEvent);
+    window.addEventListener('keydown', stopEvent, { capture: true });
+
+    const box = document.createElement('div');
+    box.style.background = '#222';
+    box.style.padding = '20px';
+    box.style.borderRadius = '15px';
+    box.style.width = '90%';
+    box.style.maxWidth = '420px';
+    box.style.maxHeight = '85vh';
+    box.style.color = '#fff';
+    box.style.fontFamily = 'sans-serif';
+    box.style.display = 'flex';
+    box.style.flexDirection = 'column';
+    box.style.border = '2px solid #555';
+    box.style.animation = 'popIn 0.3s ease-out forwards';
+    
+    // タブの生成
+    let tabsHtml = '';
+    for (const key in DIFFICULTIES) {
+        tabsHtml += `<button class="lb-tab-btn" data-diff="${key}" style="flex:1; padding:10px 2px; margin:0 2px; background:${key === currentLbDiff ? '#4caf50' : '#444'}; color:#fff; border:none; border-radius:5px; cursor:pointer; font-size:12px; font-weight:bold; transition: background 0.2s;">${DIFFICULTIES[key].label}</button>`;
+    }
+
+    box.innerHTML = `
+      <h2 style="text-align:center; margin-top:0; color:#ffd166; font-size:22px; display:flex; justify-content:center; align-items:center; gap:8px;">
+         <span style="font-size:28px;">🏆</span> 世界ランキング
+      </h2>
+      <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+        ${tabsHtml}
+      </div>
+      <div id="lb-content" style="flex:1; overflow-y:auto; background:#111; border-radius:8px; padding:10px; min-height:250px;">
+        <div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>
+      </div>
+      <button id="close-lb-btn" style="margin-top:15px; padding:12px; background:#e53935; color:#fff; border:none; border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer;">閉じる</button>
+    `;
+    
+    overlayDiv.appendChild(box);
+    document.body.appendChild(overlayDiv);
+    
+    const contentDiv = box.querySelector('#lb-content');
+    
+    const loadData = async (diff) => {
+        contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>';
+        const data = await getLeaderboard(diff);
+        if (data.length === 0) {
+            contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">まだ記録がありません</div>';
+            return;
+        }
+        
+        let html = '<table style="width:100%; border-collapse:collapse; text-align:left;">';
+        data.forEach((entry, idx) => {
+            let rankColor = '#aaa';
+            let rankText = String(idx + 1);
+            if(idx === 0) { rankColor = '#ffd700'; rankText = '🥇'; } // 金
+            else if(idx === 1) { rankColor = '#c0c0c0'; rankText = '🥈'; } // 銀
+            else if(idx === 2) { rankColor = '#cd7f32'; rankText = '🥉'; } // 銅
+            
+            const isMe = currentUser && entry.uid === currentUser.uid;
+            const bg = isMe ? 'rgba(76, 175, 80, 0.25)' : 'transparent';
+            
+            html += `
+              <tr style="border-bottom:1px solid #333; background:${bg};">
+                <td style="padding:12px 5px; font-weight:bold; color:${rankColor}; width:30px; text-align:center; font-size: ${idx < 3 ? '18px' : '14px'};">${rankText}</td>
+                <td style="padding:12px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; font-size:15px; font-weight: ${isMe ? 'bold' : 'normal'}; color: ${isMe ? '#81c784' : '#fff'};">${escapeHtml(entry.name)}</td>
+                <td style="padding:12px 5px; text-align:right; font-weight:bold; color:#4dd0e1; font-size:18px;">${entry.score}</td>
+              </tr>
+            `;
+        });
+        html += '</table>';
+        contentDiv.innerHTML = html;
+    };
+    
+    const escapeHtml = (str) => {
+        return str.replace(/[&<>'"]/g, tag => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        }[tag]));
+    };
+
+    // タブクリックイベント
+    box.querySelectorAll('.lb-tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            box.querySelectorAll('.lb-tab-btn').forEach(b => b.style.background = '#444');
+            e.target.style.background = '#4caf50';
+            currentLbDiff = e.target.dataset.diff;
+            loadData(currentLbDiff);
+        });
+    });
+    
+    const cleanup = () => {
+        document.body.removeChild(overlayDiv);
+        window.removeEventListener('keydown', stopEvent, { capture: true });
+    };
+
+    box.querySelector('#close-lb-btn').addEventListener('click', cleanup);
+    
+    // 初期データの読み込み
+    loadData(currentLbDiff);
+  }
+  // ==========================================
+
 
   const CHARACTERS = {
     byte:  { name: 'バイト',   body: '#ffd166', stroke: '#c99a2e', beak: '#ff8c42', cheek: '#ffb3ba', glow: '255,209,102' },
@@ -670,6 +976,9 @@
         spawnShockwave(W / 2, H * 0.35, '#ffd166', 260, 0.8);
         setTimeout(() => spawnShockwave(W / 2, H * 0.35, '#4dd0e1', 260, 0.8), 150);
         setTimeout(() => spawnShockwave(W / 2, H * 0.35, '#ba68c8', 260, 0.8), 300);
+        
+        // ★ 演出の後に名前入力モーダルを表示 (約1秒後)
+        setTimeout(() => showNameInputModal(score, difficulty), 1200);
       }, 200);
     } else {
       newBestLine.classList.add('hidden');
@@ -726,27 +1035,15 @@
     }
   }
 
-  // ==========================================
-  // ★ オートパイロット用ロジック（神エイム化 v2：回廊方式）
-  //   - 動く土管は「到達する時刻のすき間位置」を予測してエイム
-  //   - シュリンク土管は最終的に狭まった幅で考える
-  //   - 前方2本の土管から「安全に飛べる帯（回廊）」を計算し、
-  //     道イベントの密集地帯も先読みしてなめらかに通す
-  // ==========================================
-
-  // tAhead秒後の土管のすき間（上端・下端）を予測する
   function aiGapAt(p, tAhead) {
     let gapY = p.gapY;
     if (p.moving) {
       gapY = p.baseGapY + Math.sin((elapsed + tAhead) * p.moveSpeed + p.movePhase) * p.moveAmp;
     }
-    // シュリンクは通過するころには最終幅まで狭まっている
     const gap = p.isShrink ? p.gapFinal : p.gap;
     return { top: gapY - gap / 2, bot: gapY + gap / 2 };
   }
 
-  // 土管の「到達時点〜その直後」に安全な帯を計算する（動く土管のスイング対策）。
-  // 全通過区間の交差だと動く土管で狭くなりすぎるので、直近0.18秒ぶんを追従する。
   function aiCorridor(p) {
     const tIn = Math.max(0, (p.x - bird.r - bird.x) / speed);
     const tOut = Math.max(0, (p.x + PIPE_WIDTH + bird.r - bird.x) / speed);
@@ -764,8 +1061,7 @@
 
     if (state === 'ready' || state === 'gameover') {
       if (autoCooldown <= 0) {
-        flap(); // スタート／もう一度
-        // 開始直後の初手を邪魔しない短さにする（長いと開始1秒で落下死する）
+        flap(); 
         autoCooldown = 0.25;
       }
       return;
@@ -775,10 +1071,9 @@
 
     const doFlap = () => {
       flap();
-      autoCooldown = 0.06; // 素早い反応を保ちつつ連打の暴発を防ぐ
+      autoCooldown = 0.06;
     };
 
-    // 前方の土管を2本まで見つける（配列は左→右の順）
     let first = null, second = null;
     for (const p of pipes) {
       if (p.x + PIPE_WIDTH + bird.r > bird.x) {
@@ -787,7 +1082,6 @@
       }
     }
 
-    // 安全に飛べる帯（回廊）を求める。初期値は天井と地面。
     const MARGIN = 5;
     let corTop = bird.r + 6;
     let corBot = H - GROUND_H - bird.r - 6;
@@ -795,39 +1089,30 @@
       const c = aiCorridor(first);
       corTop = Math.max(corTop, c.top + bird.r + MARGIN);
       corBot = Math.min(corBot, c.bot - bird.r - MARGIN);
-      // 道イベントなど土管が密集しているときは、次の1本も先読みして帯を絞る
       if (second && second.x - first.x < 210) {
         const c2 = aiCorridor(second);
         corTop = Math.max(corTop, c2.top + bird.r + MARGIN);
         corBot = Math.min(corBot, c2.bot - bird.r - MARGIN);
       }
-      // 回廊がつぶれた（両立不能）ときは中央を狙う
       if (corTop > corBot) { const mid = (corTop + corBot) / 2; corTop = mid; corBot = mid; }
     }
 
-    // フラップすると必ずこの高さだけ跳ぶ（頂点までの上昇量）
     const flapRise = (cfg.flap * cfg.flap) / (2 * cfg.gravity);
-    // t秒後の未来位置
     const predict = (t) => bird.y + bird.vy * t + 0.5 * cfg.gravity * gravityDir * t * t;
 
     if (controlChaosMode) {
-      // タップ＝重力反転モード（vyリセットなので跳びすぎの心配なし）：端を割りそうなら反転
       const fy = predict(0.09);
       if (gravityDir === 1 && fy > corBot) doFlap();
       else if (gravityDir === -1 && fy < corTop) doFlap();
       return;
     }
 
-    // 落下速度が速いときに早くフラップしすぎると、固定量の跳躍で
-    // 上の土管に刺さるので、予測は短く・頂点チェック付きで判断する。
-    const soon = predict(0.05);      // まもなく割るか
-    const urgent = predict(0.016);   // 次のフレームで割るか（待ったなし）
+    const soon = predict(0.05);
+    const urgent = predict(0.016);
     if (gravityDir === 1) {
-      // 跳んだ頂点が回廊の上端を突き抜けるなら、ギリギリまでフラップを遅らせる
       const pierce = bird.y - flapRise < corTop - 6;
       if (soon > corBot && (!pierce || urgent > corBot)) doFlap();
     } else {
-      // 反転重力：フラップは下向きに跳ぶ
       const pierce = bird.y + flapRise > corBot + 6;
       if (soon < corTop && (!pierce || urgent < corTop)) doFlap();
     }
