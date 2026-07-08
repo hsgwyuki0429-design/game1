@@ -15,12 +15,12 @@
 // ==========================================================================
 
 window.FLAPPY_FIREBASE_CONFIG = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID",
+  apiKey:            "AIzaSyBHX-kxzJVM3l9_3RZN-89sFlv5DWkHods",
+  authDomain:        "abcdd-c3d0a.firebaseapp.com",
+  projectId:         "abcdd-c3d0a",
+  storageBucket:     "abcdd-c3d0a.firebasestorage.app",
+  messagingSenderId: "449731343890",
+  appId:             "1:449731343890:web:25ce352b5e8260ccf54acb",
 };
 
 // ランキングを分ける名前空間（複数ゲームで同じ Firebase を使うとき以外は変更不要）
