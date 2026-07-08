@@ -1,4 +1,4 @@
-(() => { 
+(() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const scoreEl = document.getElementById('score');
@@ -211,14 +211,15 @@
   // 重力の切り替え前後は再生速度を3/4に落として対応しやすくする（全体スロー）
   const FLIP_TIME_SCALE = 0.75;
 
-  // 黄色い土管の「道（トンネル）」イベント
+  // 「道（トンネル）」イベント
   const ROAD_GAP = 150;          // 道のすき間の高さ（広め）
   const ROAD_INTERVAL = 0.3;     // 土管どうしの間隔（秒）＝詰めて出して道にする
   const ROAD_COUNT = 16;         // 1回の道を構成する土管の数
   const ROAD_PHASE_STEP = 0.32;  // 道のうねり具合（大きいほど急カーブ）
   const ROAD_COOLDOWN_MIN = 15;     // 次の道までの最短（秒）
   const ROAD_COOLDOWN_MAX = 24;     // 次の道までの最長（秒）
-  // 奇襲土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
+
+  // 奇襲＆ロード土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
   // 伸びる進行度は土管のx位置で決める（速度に依らず一定の場所で開ききる）。
   const AMBUSH_GROW_START_X = W * 0.95; // 画面に入ってすぐ伸び始める
   const AMBUSH_GROW_END_X = W * 0.42;   // ここまでに伸びきってすき間が判明する
@@ -547,13 +548,19 @@
     });
   }
 
-  // 黄色い土管の「道（トンネル）」を作る1本。すき間の中心がなめらかにうねる。
+  // カラフルな土管の「道（トンネル）」を作る。すき間の中心がなめらかにうねり、奇襲のように伸びる。
   function spawnRoadPipe() {
     const gap = ROAD_GAP;
     const margin = 46;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
     roadPhase += ROAD_PHASE_STEP;
     const gapY = margin + gap / 2 + (0.5 + 0.5 * Math.sin(roadPhase)) * span;
+
+    // ランダムなスキン（色）を選ぶ
+    const skinKeys = Object.keys(PIPE_SKINS);
+    const randomSkinKey = skinKeys[Math.floor(Math.random() * skinKeys.length)];
+    const roadSkin = PIPE_SKINS[randomSkinKey];
+
     pipes.push({
       x: W + PIPE_WIDTH,
       baseX: W + PIPE_WIDTH,
@@ -570,6 +577,7 @@
       isAmbush: false,
       isBlue: false,
       isRoad: true,
+      roadSkin, // ランダムな色を保持
     });
   }
 
@@ -750,7 +758,7 @@
 
     // 「道（トンネル）」イベントの管理（ハード・鬼）
     if (roadActive) {
-      // 道の最中は詰めた間隔で黄色い土管を出し続ける
+      // 道の最中は詰めた間隔で土管を出し続ける
       roadSpawnTimer -= dt;
       if (roadSpawnTimer <= 0 && roadRemaining > 0) {
         spawnRoadPipe();
@@ -764,14 +772,13 @@
       }
     } else {
       // 道イベントの発動判定（重力が通常向きで安定しているときだけ）
-      // ※ スコア条件を緩和し、序盤(スコア1以上)から出現できるように変更
       if (cfg.road && score >= 1 && gravityDir === 1 && !gravityWarn && noSpawnTimer <= 0) {
         roadCooldown -= dt;
         if (roadCooldown <= 0) {
           roadActive = true;
           roadRemaining = ROAD_COUNT;
           roadSpawnTimer = 0;
-          spawnFloater(W / 2, H / 2 - 60, '🟨 ロード!', '#ffd24a', 1.5);
+          spawnFloater(W / 2, H / 2 - 60, '🌈 ロード!', '#ffca28', 1.5);
           beep({ freq: 660, glideTo: 990, duration: 0.18, type: 'triangle', volume: 0.12 });
         }
       }
@@ -794,8 +801,6 @@
         const t = Math.max(0, Math.min(1, (W - p.x) / (W - W * 0.3)));
         p.gap = p.shrinkStart + (p.gapFinal - p.shrinkStart) * t;
       }
-
-      // ⑤ 奇襲土管の伸び具合は土管のx位置で決まるため、ここでの更新は不要
 
       if (p.isSlideX) {
         p.baseX -= speed * dt;
@@ -862,8 +867,8 @@
       if (inX) {
         let topH = p.gapY - p.gap / 2;
         let botY = p.gapY + p.gap / 2;
-        // 奇襲土管：上下がまだ伸びきっていない間は、伸びた分だけが壁になる
-        if (p.isAmbush) {
+        // 奇襲土管＆ロード土管：上下がまだ伸びきっていない間は、伸びた分だけが壁になる
+        if (p.isAmbush || p.isRoad) {
           const e = ambushGrow(p);
           topH = (p.gapY - p.gap / 2) * e;
           botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
@@ -923,17 +928,17 @@
 
       let topH = p.gapY - p.gap / 2;
       let botY = p.gapY + p.gap / 2;
-      // 奇襲土管：上下の土管が伸びていく様子を描く
-      if (p.isAmbush) {
+      // 奇襲土管＆ロード土管：上下の土管が伸びていく様子を描く
+      if (p.isAmbush || p.isRoad) {
         const e = ambushGrow(p);
         topH = (p.gapY - p.gap / 2) * e;
         botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
       }
 
       if (p.isRoad) {
-        // 「道」を作る黄色い土管
-        ctx.fillStyle = '#ffde3d';
-        ctx.strokeStyle = '#e0a800';
+        // 「道」を作る土管はそれぞれランダムな色
+        ctx.fillStyle = p.roadSkin.fill;
+        ctx.strokeStyle = p.roadSkin.stroke;
       } else if (p.isShrink) {
         // 近づくと狭まる赤い土管
         ctx.fillStyle = '#ef5350';
@@ -962,7 +967,7 @@
       ctx.strokeRect(renderX, botY, PIPE_WIDTH, bottomHeight);
 
       if (p.isRoad) {
-        ctx.fillStyle = '#fff08a';
+        ctx.fillStyle = p.roadSkin.cap;
       } else if (p.isShrink) {
         ctx.fillStyle = '#e57373';
       } else if (p.isAmbush) {
@@ -975,7 +980,7 @@
         ctx.fillStyle = p.moving ? pipeSkin.mCap : pipeSkin.cap;
       }
 
-      // 伸びていない土管には縁（キャップ）を描かない（奇襲の伸び始め対策）
+      // 伸びていない土管には縁（キャップ）を描かない（伸び始め対策）
       if (topHeight > 0.5) {
         ctx.fillRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
         ctx.strokeRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
