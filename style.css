@@ -157,10 +157,12 @@ canvas {
   inset: 0;
   background: rgba(10, 12, 20, 0.72);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
   color: #fff;
+  /* メニューの外はどこを押してもスタートできるタップ領域 */
+  cursor: pointer;
 }
 
 #overlay.hidden {
@@ -168,7 +170,9 @@ canvas {
 }
 
 #overlay-inner {
-  padding: 24px;
+  padding: 14px 16px;
+  max-width: 260px;
+  cursor: auto;
 }
 
 #overlay-inner.hidden {
@@ -176,8 +180,8 @@ canvas {
 }
 
 #overlay-title {
-  font-size: 32px;
-  margin: 0 0 8px;
+  font-size: 24px;
+  margin: 0 0 6px;
   color: #ffd166;
   text-shadow: 0 2px 0 #00000066;
 }
@@ -203,15 +207,15 @@ canvas {
 #diff-select {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin: 0 0 14px;
+  gap: 6px;
+  justify-content: flex-start;
+  margin: 0 0 10px;
 }
 
 .diff-btn {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border: 2px solid rgba(255, 255, 255, 0.25);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -249,8 +253,8 @@ canvas {
 /* --- 自動操作モード（難易度とは別の括り） --- */
 #mode-select {
   display: flex;
-  justify-content: center;
-  margin: 0 0 14px;
+  justify-content: flex-start;
+  margin: 0 0 10px;
 }
 
 .mode-btn {
@@ -278,12 +282,12 @@ canvas {
 #overlay-sub {
   margin: 0 0 4px;
   opacity: 0.85;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 #best-line {
-  margin: 0 0 20px;
-  font-size: 14px;
+  margin: 0 0 14px;
+  font-size: 13px;
   opacity: 0.9;
 }
 
@@ -293,9 +297,9 @@ canvas {
 }
 
 #start-btn {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
-  padding: 12px 32px;
+  padding: 10px 28px;
   border: none;
   border-radius: 999px;
   background: #ffd166;
@@ -310,13 +314,26 @@ canvas {
   box-shadow: 0 2px 0 #c99a2e;
 }
 
+/* 自己ベストの名前登録待ちなどで一時的に開始できない状態 */
+#start-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: 0 6px 0 #8a6a20;
+}
+
+#tap-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
 /* --- メインメニューのサブボタン --- */
 #menu-btns {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 18px auto 0;
-  max-width: 240px;
+  gap: 6px;
+  margin: 12px 0 0;
+  max-width: 200px;
 }
 
 .menu-btn {
@@ -345,6 +362,10 @@ canvas {
   padding: 22px 24px;
   width: 100%;
   max-width: 360px;
+  /* オーバーレイ本体は左上寄せだが、サブパネルは中央に表示する */
+  margin: auto;
+  text-align: center;
+  cursor: auto;
 }
 
 .subpanel.hidden {
