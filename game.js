@@ -361,7 +361,7 @@
 
   // これまでにユーザーが残した自己ベストを全難易度ぶん一度だけゼロにリセットする。
   // フラグを立てておくことで、リセットは各ユーザーにつき一回だけ実行される。
-  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v1';
+  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v2';
   if (!localStorage.getItem(BEST_RESET_FLAG)) {
     Object.keys(DIFFICULTIES).forEach(d => localStorage.removeItem(bestKey(d)));
     localStorage.setItem(BEST_RESET_FLAG, '1');
