@@ -46,27 +46,13 @@
   updateAutoBtn();
 
   // ==========================================
-  // ★ ランキングボタンの生成と配置
+  // ★ ランキングボタン（左上メニューのボタン群に追加）
   // ==========================================
   const lbBtn = document.createElement('button');
+  lbBtn.className = 'menu-btn';
   lbBtn.innerHTML = '🏆 ランキング';
-  lbBtn.style.position = 'fixed';
-  lbBtn.style.top = '20px';
-  lbBtn.style.right = '20px';
-  lbBtn.style.zIndex = '999999';
-  lbBtn.style.padding = '10px 15px';
-  lbBtn.style.background = 'rgba(0,0,0,0.7)';
-  lbBtn.style.color = '#fff';
-  lbBtn.style.border = '2px solid rgba(255,215,0,0.6)';
-  lbBtn.style.borderRadius = '12px';
-  lbBtn.style.fontFamily = 'sans-serif';
-  lbBtn.style.fontWeight = 'bold';
-  lbBtn.style.fontSize = '14px';
-  lbBtn.style.cursor = 'pointer';
-  lbBtn.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
-  lbBtn.style.transition = 'background 0.2s, border-color 0.2s';
-  document.body.appendChild(lbBtn);
-  
+  document.getElementById('menu-btns').appendChild(lbBtn);
+
   lbBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -181,6 +167,9 @@
     const cleanup = () => {
         document.body.removeChild(overlayDiv);
         window.removeEventListener('keydown', stopEvent, { capture: true });
+        // 名前登録（またはスキップ）が済んだので再スタートを解禁する
+        pendingBestSave = false;
+        startBtn.disabled = false;
     };
 
     box.querySelector('#save-score-btn').addEventListener('click', async () => {
@@ -188,7 +177,11 @@
       localStorage.setItem('flappy-byte-player-name', name);
       box.innerHTML = `<div style="padding:20px;"><h3 style="color:#4caf50; margin:0;">🌐 登録中...</h3></div>`;
       currentLbDiff = diff;
-      await window.LB.save(name, newScore, diff);
+      try {
+        await window.LB.save(name, newScore, diff);
+      } catch (err) {
+        console.warn('[leaderboard] スコアの登録に失敗しました:', err);
+      }
       cleanup();
       // 登録後にランキングを表示してあげる
       showLeaderboardModal();
@@ -261,9 +254,18 @@
     
     const contentDiv = box.querySelector('#lb-content');
     
+    let loadSeq = 0; // タブ連打時に古い結果で上書きされないようにする
     const loadData = async (diff) => {
+        const seq = ++loadSeq;
         contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>';
-        const data = await window.LB.top(diff);
+        let data;
+        try {
+            data = await window.LB.top(diff);
+        } catch (e) {
+            if (seq === loadSeq) contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#e57373;">読み込みに失敗しました。通信環境を確認してください。</div>';
+            return;
+        }
+        if (seq !== loadSeq) return;
         if (data.length === 0) {
             contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">まだ記録がありません</div>';
             return;
@@ -469,6 +471,8 @@
   buildPipeGrid();
 
   let state = 'ready';
+  // 自己ベスト更新後、名前入力モーダルが閉じるまで true（この間は再スタート不可）
+  let pendingBestSave = false;
   let bird, pipes, score, elapsed, speed, spawnTimer, groundOffset, flashTimer, flashMaxTimer, flashColor;
   let particles, floaters, shakeTime, shakeMag, squash, punch, clouds, bgTime, trail, shockwaves;
   let gravityDir, gravityArmed, gravityPhaseTimer, gravityWarn, noSpawnTimer, combo;
@@ -843,6 +847,7 @@
 
   function flap() {
     if (state === 'ready') {
+      if (pendingBestSave) return; // 自己ベストの名前登録が終わるまで開始しない
       startGame();
       return;
     }
@@ -864,6 +869,7 @@
       vibrate(8);
       spawnBurst(bird.x - bird.r, bird.y + 6, ['#fff8e1', '#ffe9b3'], 3, { speed: 90, life: 0.35, size: 2 });
     } else if (state === 'gameover') {
+      if (pendingBestSave) return; // 自己ベストの名前登録が終わるまで再スタートしない
       startGame();
     }
   }
@@ -900,6 +906,8 @@
     overlay.classList.remove('hidden');
 
     if (isNewBest && score > 0) {
+      pendingBestSave = true;
+      startBtn.disabled = true;
       newBestLine.classList.remove('hidden');
       const rainbow = ['#ffd166', '#ff6b6b', '#4caf50', '#66bb6a', '#4dd0e1', '#ba68c8', '#fff'];
       setTimeout(() => {
@@ -1579,6 +1587,14 @@
   requestAnimationFrame(loop);
 
   canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    flap();
+  });
+  // メニュー表示中は画面のどこを押してもスタート/再スタートできる。
+  // ボタン類の上と、サブパネル（キャラ選択など）を開いているときは反応しない。
+  overlay.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    if (overlayInner.classList.contains('hidden')) return;
     e.preventDefault();
     flap();
   });

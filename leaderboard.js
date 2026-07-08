@@ -10,6 +10,9 @@
 //   await window.LB.top(diff)   → [{ name, score, difficulty, timestamp, uid }, ...] (score降順)
 //
 // レベル（難易度 diff: normal / hard / insane / gravity）ごとに別ランキングとして扱う。
+//
+// 記録は「1プレイヤー×1難易度につき1件」だけ保持し、より高いスコアを出したときのみ
+// 上書き更新する（同じ人が同じレベルに何行も並ばない）。
 // ==========================================================================
 
 const LOCAL_KEY = 'flappy-byte-local-leaderboard';
@@ -41,20 +44,34 @@ const localBackend = {
   ready: Promise.resolve('local'),
   getUid: () => ensureUid(),
   async save(name, score, diff) {
-    const list = readLocal();
-    list.push({
+    const uid = ensureUid();
+    const entry = {
       name: (name || '名無し').slice(0, 15),
       score: Number(score) || 0,
       difficulty: diff,
       timestamp: Date.now(),
-      uid: ensureUid(),
-    });
+      uid,
+    };
+    const list = readLocal();
+    const idx = list.findIndex(e => e.uid === uid && e.difficulty === diff);
+    if (idx >= 0) {
+      if (entry.score > (Number(list[idx].score) || 0)) list[idx] = entry;
+    } else {
+      list.push(entry);
+    }
     list.sort((a, b) => b.score - a.score);
     writeLocal(list.slice(0, MAX_KEEP));
   },
   async top(diff) {
-    return readLocal()
-      .filter(e => e.difficulty === diff)
+    // 同一プレイヤー(uid)は最高記録の1件だけに絞る（過去に重複保存されたデータも吸収）
+    const best = new Map();
+    for (const e of readLocal()) {
+      if (e.difficulty !== diff) continue;
+      const key = e.uid || ('name:' + e.name);
+      const cur = best.get(key);
+      if (!cur || (Number(e.score) || 0) > (Number(cur.score) || 0)) best.set(key, e);
+    }
+    return [...best.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, TOP_N);
   },
@@ -84,7 +101,7 @@ if (isConfigured(cfg)) {
       ]);
       const { initializeApp } = appMod;
       const { getAuth, signInAnonymously, onAuthStateChanged } = authMod;
-      const { getFirestore, collection, addDoc, getDocs } = fsMod;
+      const { getFirestore, collection, doc, getDoc, setDoc, getDocs, query, orderBy, limit } = fsMod;
 
       const app = initializeApp(cfg);
       const auth = getAuth(app);
@@ -100,30 +117,40 @@ if (isConfigured(cfg)) {
       await signInAnonymously(auth);
       await authReady;
 
-      // 全ゲーム共通のリーダーボードコレクション。難易度(diff)はドキュメントの
-      // フィールドで区別し、取得時にクライアント側で絞り込む（複合インデックス不要）。
-      const colRef = () => collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+      // 難易度ごとに別コレクション（leaderboard-normal など）に分け、
+      // ドキュメントID = uid で「1人1難易度につき1件」だけ保持する。
+      // 取得はスコア降順 + limit(TOP_N) で上位だけ読む
+      // （単一フィールドの自動インデックスで動くため複合インデックス不要）。
+      const colRef = (diff) => collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard-' + diff);
+
+      // 難易度ごとの取得結果キャッシュ（タブ切り替えのたびに再取得しない）
+      const cache = new Map(); // diff -> { t: 取得時刻, data: [...] }
+      const CACHE_MS = 30 * 1000;
 
       window.LB.mode = 'global';
       window.LB.getUid = () => uid;
       window.LB.save = async (name, score, diff) => {
-        await addDoc(colRef(), {
+        const val = Number(score) || 0;
+        const ref = doc(colRef(diff), uid);
+        const prev = await getDoc(ref);
+        if (prev.exists() && (Number(prev.data().score) || 0) >= val) return; // 記録更新時のみ書き込む
+        await setDoc(ref, {
           name: (name || '名無し').slice(0, 15),
-          score: Number(score) || 0,
+          score: val,
           difficulty: diff,
           timestamp: Date.now(),
           uid,
         });
+        cache.delete(diff); // 次回表示で最新を取得させる
       };
       window.LB.top = async (diff) => {
-        const snap = await getDocs(colRef());
+        const hit = cache.get(diff);
+        if (hit && Date.now() - hit.t < CACHE_MS) return hit.data;
+        const snap = await getDocs(query(colRef(diff), orderBy('score', 'desc'), limit(TOP_N)));
         const out = [];
-        snap.forEach(d => {
-          const x = d.data();
-          if (x.difficulty === diff) out.push(x);
-        });
-        out.sort((a, b) => b.score - a.score);
-        return out.slice(0, TOP_N);
+        snap.forEach(d => out.push(d.data()));
+        cache.set(diff, { t: Date.now(), data: out });
+        return out;
       };
 
       console.info('[leaderboard] 世界共通ランキング(global)モードで動作中');
