@@ -1,75 +1,8 @@
-(() => {
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
 // ==========================================
-// ★ Firebase (オンラインランキング用) の初期化
+// Flappy Byte 本体
+// ランキング(世界共通/ローカル)は leaderboard.js が window.LB として提供する。
+// Firebase 設定は firebase-config.js に記入。未設定なら自動でローカル保存にフォールバック。
 // ==========================================
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { projectId: "dummy-project" };
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'flappy-byte-default';
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-let currentUser = null;
-const initAuth = async () => {
-    try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-            await signInAnonymously(auth);
-        }
-    } catch (e) {
-        console.error("Auth error", e);
-    }
-};
-initAuth();
-onAuthStateChanged(auth, user => {
-    currentUser = user;
-});
-
-// リーダーボードデータの保存
-async function saveScoreToDB(name, score, diff) {
-    if (!currentUser) return;
-    try {
-        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
-        await addDoc(colRef, {
-            name: name || "名無し",
-            score: score,
-            difficulty: diff,
-            timestamp: Date.now(),
-            uid: currentUser.uid
-        });
-    } catch (e) {
-        console.error("Error saving score:", e);
-    }
-}
-
-// リーダーボードデータの取得
-async function getLeaderboard(diff) {
-    if (!currentUser) return [];
-    try {
-        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
-        const snapshot = await getDocs(colRef);
-        let results = [];
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.difficulty === diff) {
-                results.push(data);
-            }
-        });
-        // スコアが高い順にソート
-        results.sort((a, b) => b.score - a.score);
-        return results.slice(0, 50); // 上位50位まで取得
-    } catch (e) {
-        console.error("Error fetching leaderboard:", e);
-        return [];
-    }
-}
-
-
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -268,7 +201,8 @@ async function getLeaderboard(diff) {
       const name = input.value.trim() || '名無し';
       localStorage.setItem('flappy-byte-player-name', name);
       box.innerHTML = `<div style="padding:20px;"><h3 style="color:#4caf50; margin:0;">🌐 登録中...</h3></div>`;
-      await saveScoreToDB(name, newScore, diff);
+      currentLbDiff = diff;
+      await window.LB.save(name, newScore, diff);
       cleanup();
       // 登録後にランキングを表示してあげる
       showLeaderboardModal();
@@ -277,8 +211,10 @@ async function getLeaderboard(diff) {
     box.querySelector('#skip-score-btn').addEventListener('click', cleanup);
   }
 
-  let currentLbDiff = difficulty;
+  let currentLbDiff = null;
   function showLeaderboardModal() {
+    if (!currentLbDiff) currentLbDiff = difficulty;
+    const lbMode = (window.LB && window.LB.mode) || 'local';
     const overlayDiv = document.createElement('div');
     overlayDiv.style.position = 'fixed';
     overlayDiv.style.top = '0';
@@ -320,8 +256,11 @@ async function getLeaderboard(diff) {
 
     box.innerHTML = `
       <h2 style="text-align:center; margin-top:0; color:#ffd166; font-size:22px; display:flex; justify-content:center; align-items:center; gap:8px;">
-         <span style="font-size:28px;">🏆</span> 世界ランキング
+         <span style="font-size:28px;">🏆</span> ${lbMode === 'global' ? '世界ランキング' : 'ランキング'}
       </h2>
+      <p style="text-align:center; margin:-6px 0 12px; font-size:12px; color:${lbMode === 'global' ? '#81c784' : '#e0a94b'};">
+        ${lbMode === 'global' ? '🌐 世界中のプレイヤーと共通' : '📱 この端末に保存中（Firebase未設定）'}
+      </p>
       <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
         ${tabsHtml}
       </div>
@@ -338,7 +277,7 @@ async function getLeaderboard(diff) {
     
     const loadData = async (diff) => {
         contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>';
-        const data = await getLeaderboard(diff);
+        const data = await window.LB.top(diff);
         if (data.length === 0) {
             contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">まだ記録がありません</div>';
             return;
@@ -352,7 +291,8 @@ async function getLeaderboard(diff) {
             else if(idx === 1) { rankColor = '#c0c0c0'; rankText = '🥈'; } // 銀
             else if(idx === 2) { rankColor = '#cd7f32'; rankText = '🥉'; } // 銅
             
-            const isMe = currentUser && entry.uid === currentUser.uid;
+            const myUid = window.LB && window.LB.getUid ? window.LB.getUid() : null;
+            const isMe = myUid && entry.uid === myUid;
             const bg = isMe ? 'rgba(76, 175, 80, 0.25)' : 'transparent';
             
             html += `
