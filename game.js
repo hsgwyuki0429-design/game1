@@ -28,36 +28,22 @@
   const pipeGrid = document.getElementById('pipe-grid');
 
   // ==========================================
-  // ★ 自動操作ボタンの生成と配置
+  // ★ 自動操作モード（難易度とは別の括りのトグルボタン）
+  //   自動操作中は自己ベストやランキングには一切影響しない。
   // ==========================================
-  const autoBtn = document.createElement('button');
-  autoBtn.textContent = '🤖 自動操作: OFF';
-  autoBtn.style.position = 'fixed';
-  autoBtn.style.top = '20px';
-  autoBtn.style.right = '20px';
-  autoBtn.style.zIndex = '999999';
-  autoBtn.style.padding = '10px 15px';
-  autoBtn.style.background = 'rgba(0,0,0,0.7)';
-  autoBtn.style.color = '#fff';
-  autoBtn.style.border = '2px solid rgba(255,255,255,0.6)';
-  autoBtn.style.borderRadius = '12px';
-  autoBtn.style.fontFamily = 'sans-serif';
-  autoBtn.style.fontWeight = 'bold';
-  autoBtn.style.fontSize = '14px';
-  autoBtn.style.cursor = 'pointer';
-  autoBtn.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
-  autoBtn.style.transition = 'background 0.2s, border-color 0.2s';
-  document.body.appendChild(autoBtn);
-
+  const autoBtn = document.getElementById('auto-btn');
   let isAutoPilot = false;
+  function updateAutoBtn() {
+    autoBtn.textContent = isAutoPilot ? '🤖 自動操作: ON' : '🤖 自動操作: OFF';
+    autoBtn.classList.toggle('active', isAutoPilot);
+  }
   autoBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
     isAutoPilot = !isAutoPilot;
-    autoBtn.textContent = isAutoPilot ? '🤖 自動操作: ON' : '🤖 自動操作: OFF';
-    autoBtn.style.background = isAutoPilot ? '#4caf50' : 'rgba(0,0,0,0.7)';
-    autoBtn.style.borderColor = isAutoPilot ? '#81c784' : 'rgba(255,255,255,0.6)';
+    updateAutoBtn();
   });
+  updateAutoBtn();
 
   // ==========================================
   // ★ ランキングボタンの生成と配置
@@ -65,7 +51,7 @@
   const lbBtn = document.createElement('button');
   lbBtn.innerHTML = '🏆 ランキング';
   lbBtn.style.position = 'fixed';
-  lbBtn.style.top = '70px'; // 自動操作ボタンの下に配置
+  lbBtn.style.top = '20px';
   lbBtn.style.right = '20px';
   lbBtn.style.zIndex = '999999';
   lbBtn.style.padding = '10px 15px';
@@ -369,6 +355,14 @@
 
   function bestKey(diff) {
     return diff === 'normal' ? STORAGE_KEY : `${STORAGE_KEY}-${diff}`;
+  }
+
+  // これまでにユーザーが残した自己ベストを全難易度ぶん一度だけゼロにリセットする。
+  // フラグを立てておくことで、リセットは各ユーザーにつき一回だけ実行される。
+  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v1';
+  if (!localStorage.getItem(BEST_RESET_FLAG)) {
+    Object.keys(DIFFICULTIES).forEach(d => localStorage.removeItem(bestKey(d)));
+    localStorage.setItem(BEST_RESET_FLAG, '1');
   }
 
   let best = Number(localStorage.getItem(bestKey(difficulty)) || 0);
@@ -893,7 +887,8 @@
     spawnShockwave(bird.x, bird.y, '#ff6b6b', 110, 0.4);
     gravityBadge.classList.add('hidden');
 
-    const isNewBest = score > best;
+    // 自動操作モードのプレイは自己ベストにもランキングにも反映しない。
+    const isNewBest = !isAutoPilot && score > best;
     if (isNewBest) {
       best = score;
       localStorage.setItem(bestKey(difficulty), String(best));
