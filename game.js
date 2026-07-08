@@ -254,15 +254,35 @@
     
     const contentDiv = box.querySelector('#lb-content');
     
+    const LB_TIMEOUT_MS = 8000; // 通信が固まって「読み込み中」が終わらないのを防ぐ上限時間
+    const withTimeout = (promise, ms) => {
+        let timer;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('timeout')), ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    };
+
     let loadSeq = 0; // タブ連打時に古い結果で上書きされないようにする
+    const showError = (diff) => {
+        contentDiv.innerHTML = `
+          <div style="text-align:center; padding:20px; color:#e57373;">
+            読み込みに失敗しました。通信環境を確認してください。<br>
+            <button id="lb-retry-btn" style="margin-top:12px; padding:8px 20px; background:#e57373; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer;">再読み込み</button>
+          </div>`;
+        contentDiv.querySelector('#lb-retry-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            loadData(diff);
+        });
+    };
     const loadData = async (diff) => {
         const seq = ++loadSeq;
         contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">読み込み中...</div>';
         let data;
         try {
-            data = await window.LB.top(diff);
+            data = await withTimeout(window.LB.top(diff), LB_TIMEOUT_MS);
         } catch (e) {
-            if (seq === loadSeq) contentDiv.innerHTML = '<div style="text-align:center; padding:20px; color:#e57373;">読み込みに失敗しました。通信環境を確認してください。</div>';
+            if (seq === loadSeq) showError(diff);
             return;
         }
         if (seq !== loadSeq) return;
