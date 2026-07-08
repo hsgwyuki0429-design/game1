@@ -22,7 +22,7 @@
   const charGrid = document.getElementById('char-grid');
   const pipeGrid = document.getElementById('pipe-grid');
 
-  // ★自動操作用ボタンの追加位置を修正 (stage要素の中に絶対配置し、最前面に出す)
+  // 自動操作用ボタンの追加
   const autoBtn = document.createElement('button');
   autoBtn.textContent = '🤖 自動操作: OFF';
   autoBtn.style.position = 'absolute';
@@ -38,7 +38,7 @@
   autoBtn.style.fontWeight = 'bold';
   autoBtn.style.cursor = 'pointer';
   autoBtn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-  stage.appendChild(autoBtn); // stageに直接追加
+  stage.appendChild(autoBtn);
 
   let isAutoPilot = false;
   autoBtn.addEventListener('click', (e) => {
@@ -578,8 +578,9 @@
     });
   }
 
-  // 色とりどりの「道（トンネル）」を作る。すき間の中心がなめらかにうねり、奇襲のように伸びる。
-  function spawnRoadPipe() {
+  // 色とりどりの「道（トンネル）」を作る。
+  // isStart が true の場合（トンネルの1本目）は、奇襲のように伸びず、最初からすき間が見えている状態になる。
+  function spawnRoadPipe(isStart) {
     const gap = ROAD_GAP;
     const margin = 46;
     const span = Math.max(20, H - GROUND_H - margin * 2 - gap);
@@ -607,6 +608,7 @@
       isAmbush: false,
       isBlue: false,
       isRoad: true,
+      isRoadStart: isStart, // ★ 最初の1本目かどうかのフラグ
       roadSkin: { fill, stroke, cap },
     });
   }
@@ -850,7 +852,8 @@
       // 道の最中は詰めた間隔で土管を出し続ける
       roadSpawnTimer -= dt;
       if (roadSpawnTimer <= 0 && roadRemaining > 0) {
-        spawnRoadPipe();
+        // ★ 最初の一本目（roadRemaining === ROAD_COUNT）だけは、isStart フラグを true で渡す
+        spawnRoadPipe(roadRemaining === ROAD_COUNT);
         roadRemaining--;
         roadSpawnTimer = ROAD_INTERVAL;
         if (roadRemaining <= 0) {
@@ -957,12 +960,14 @@
       if (inX) {
         let topH = p.gapY - p.gap / 2;
         let botY = p.gapY + p.gap / 2;
-        // 奇襲土管＆ロード土管：上下がまだ伸びきっていない間は、伸びた分だけが壁になる
-        if (p.isAmbush || p.isRoad) {
+        
+        // 奇襲土管、または「最初の1本目ではないロード土管」の場合は伸びる
+        if (p.isAmbush || (p.isRoad && !p.isRoadStart)) {
           const e = ambushGrow(p);
           topH = (p.gapY - p.gap / 2) * e;
           botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
         }
+        
         if (bird.y - bird.r < topH || bird.y + bird.r > botY) {
           endGame();
           return;
@@ -1018,8 +1023,9 @@
 
       let topH = p.gapY - p.gap / 2;
       let botY = p.gapY + p.gap / 2;
-      // 奇襲土管＆ロード土管：上下の土管が伸びていく様子を描く
-      if (p.isAmbush || p.isRoad) {
+      
+      // 奇襲土管、または「最初の1本目ではないロード土管」の場合は伸びるアニメーションを描画
+      if (p.isAmbush || (p.isRoad && !p.isRoadStart)) {
         const e = ambushGrow(p);
         topH = (p.gapY - p.gap / 2) * e;
         botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
