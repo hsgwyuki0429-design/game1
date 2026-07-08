@@ -1,4 +1,4 @@
-(() => {
+(() => { 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const scoreEl = document.getElementById('score');
@@ -216,7 +216,6 @@
   const ROAD_INTERVAL = 0.3;     // 土管どうしの間隔（秒）＝詰めて出して道にする
   const ROAD_COUNT = 16;         // 1回の道を構成する土管の数
   const ROAD_PHASE_STEP = 0.32;  // 道のうねり具合（大きいほど急カーブ）
-  const ROAD_COOLDOWN_FIRST = 12;   // 最初の道が出るまで（秒）
   const ROAD_COOLDOWN_MIN = 15;     // 次の道までの最短（秒）
   const ROAD_COOLDOWN_MAX = 24;     // 次の道までの最長（秒）
   // 奇襲土管：画面に出てから上下の土管がそれぞれ伸びて、最後にすき間の位置が現れる。
@@ -272,7 +271,8 @@
     roadRemaining = 0;
     roadSpawnTimer = 0;
     roadPhase = Math.random() * Math.PI * 2;
-    roadCooldown = ROAD_COOLDOWN_FIRST;
+    // 30%の確率で序盤(2〜5秒後)に出現、それ以外は通常通り(10〜15秒後)に出現させる
+    roadCooldown = Math.random() < 0.3 ? 2 + Math.random() * 3 : 10 + Math.random() * 5;
 
     controlChaosMode = false;
     controlChaosTimer = 0;
@@ -764,7 +764,8 @@
       }
     } else {
       // 道イベントの発動判定（重力が通常向きで安定しているときだけ）
-      if (cfg.road && score >= 8 && gravityDir === 1 && !gravityWarn && noSpawnTimer <= 0) {
+      // ※ スコア条件を緩和し、序盤(スコア1以上)から出現できるように変更
+      if (cfg.road && score >= 1 && gravityDir === 1 && !gravityWarn && noSpawnTimer <= 0) {
         roadCooldown -= dt;
         if (roadCooldown <= 0) {
           roadActive = true;
