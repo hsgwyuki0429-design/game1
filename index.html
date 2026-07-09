@@ -32,9 +32,27 @@
         <button id="start-btn">スタート</button>
         <p id="tap-hint">👆 画面のどこでもタップでスタート</p>
         <div id="menu-btns">
+          <button class="menu-btn" data-panel="practice">🛠 練習モード</button>
           <button class="menu-btn" data-panel="char">🐤 キャラ選択</button>
           <button class="menu-btn" data-panel="pipe">🟩 土管デザイン</button>
           <button class="menu-btn" data-panel="tutorial">📖 遊び方</button>
+        </div>
+      </div>
+
+      <!-- 練習モード -->
+      <div id="panel-practice" class="subpanel hidden">
+        <h2 class="subpanel-title">練習モード</h2>
+        <div style="text-align:left; margin-bottom: 20px; font-size:14px; line-height: 2; padding: 0 10px;">
+          <label><input type="checkbox" id="prac-normal" checked> ノーマル土管 (緑)</label><br>
+          <label><input type="checkbox" id="prac-blue"> 青色土管</label><br>
+          <label><input type="checkbox" id="prac-yellow"> 黄色土管 (奇襲)</label><br>
+          <label><input type="checkbox" id="prac-red"> 赤色土管 (シュリンク)</label><br>
+          <label><input type="checkbox" id="prac-purple"> 紫土管 (スライド)</label><br>
+          <label><input type="checkbox" id="prac-road"> 土管ロード (道)</label>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <button class="back-btn" data-back>← もどる</button>
+          <button id="practice-start-btn" style="padding: 10px 24px; border-radius: 999px; background:#4caf50; color:#fff; font-weight:bold; border:none; cursor:pointer; font-size: 15px; box-shadow: 0 5px 0 #2e7d32;">スタート</button>
         </div>
       </div>
 
@@ -58,6 +76,7 @@
         <div id="tutorial-body">
           <p><b>🕹 操作</b><br>タップ / クリック / スペースキーで羽ばたきます。押すたびに上へジャンプ。</p>
           <p><b>🎯 目的</b><br>土管のすき間を通り抜けてスコアを稼ごう。地面や土管に当たるとゲームオーバー。</p>
+          <p><b>🔄 ローテーション</b><br>スコアが 7 ポイント上がるごとに、世界の色やデザインが次々と変化します！</p>
           <p><b>✨ コンボ</b><br>すき間の<b>まん中</b>を通ると <b>COMBO</b>! 連続で決めるとボーナス演出。</p>
           <p><b>🟦 動く土管 / 🟪 スライド</b><br>スコアが上がると土管が上下に動いたり横にゆれたり。よく見て対応しよう。</p>
           <p><b>🟧 奇襲</b><br>上下の土管があとから伸びてくる! 伸びきるまですき間の位置がわからないので、最後まで気をぬかないで。</p>
