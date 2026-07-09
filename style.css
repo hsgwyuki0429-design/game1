@@ -40,7 +40,6 @@ html, body {
   animation: invert-hit 0.28s steps(2, end);
 }
 
-/* 目にやさしい「気持ちいい」フラッシュ演出（反転せずブルーム＆彩度で高揚感を出す） */
 @keyframes invert-pulse {
   0%   { filter: none; }
   35%  { filter: brightness(1.35) saturate(1.7) contrast(1.05); }
@@ -161,7 +160,6 @@ canvas {
   justify-content: flex-start;
   text-align: left;
   color: #fff;
-  /* メニューの外はどこを押してもスタートできるタップ領域 */
   cursor: pointer;
 }
 
@@ -244,19 +242,12 @@ canvas {
   border-color: #ff4d6d;
 }
 
-.diff-btn[data-diff="gravity"].active {
-  background: #ba68c8;
-  border-color: #ba68c8;
-  color: #fff;
-}
-
 .diff-btn[data-diff="action"].active {
   background: #4ea8de;
   border-color: #4ea8de;
   color: #fff;
 }
 
-/* --- 自動操作モード（難易度とは別の括り） --- */
 #mode-select {
   display: flex;
   justify-content: flex-start;
@@ -320,7 +311,6 @@ canvas {
   box-shadow: 0 2px 0 #c99a2e;
 }
 
-/* 自己ベストの名前登録待ちなどで一時的に開始できない状態 */
 #start-btn:disabled {
   opacity: 0.45;
   cursor: default;
@@ -333,7 +323,6 @@ canvas {
   opacity: 0.75;
 }
 
-/* --- メインメニューのサブボタン --- */
 #menu-btns {
   display: flex;
   flex-direction: column;
@@ -363,12 +352,10 @@ canvas {
   transform: translateY(2px);
 }
 
-/* --- サブパネル（キャラ選択 / 土管 / 遊び方） --- */
 .subpanel {
   padding: 22px 24px;
   width: 100%;
   max-width: 360px;
-  /* オーバーレイ本体は左上寄せだが、サブパネルは中央に表示する */
   margin: auto;
   text-align: center;
   cursor: auto;
