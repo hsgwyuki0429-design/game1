@@ -1,5 +1,5 @@
 // ==========================================
-// Flappy Byte 本体 (最高権力者デバッグ・演出強化版)
+// Flappy Byte 本体 (最高権力者デバッグ・10点以内地下確定版)
 // ==========================================
 (() => {
   const canvas = document.getElementById('game');
@@ -1056,9 +1056,16 @@
         transitionWallX -= speed * dt;
     }
 
-    // --- ★ BUG FIX: 練習モードでは地下イベントを封印 ---
-    if (!isPracticeMode && cfg.actionMode && !actionEventDone && score >= 2 && score <= 14 && actionPhase === 0 && !roadActive && spawnTimer <= 0) {
-       if (Math.random() < 0.15) {
+    // --- ★ UPDATE: 土管を10個通る間に必ず壁が出現するように変更 ---
+    if (!isPracticeMode && cfg.actionMode && !actionEventDone && actionPhase === 0 && !roadActive && spawnTimer <= 0) {
+       let triggerWall = false;
+       if (score >= 10) {
+           triggerWall = true; // スコア10に達したら強制出現
+       } else if (score >= 2 && Math.random() < 0.15) {
+           triggerWall = true; // スコア2〜9の間は確率(15%)で出現
+       }
+
+       if (triggerWall) {
           actionPhase = 1;
           transitionWallX = W + 50;
           transitionPipeY = H / 2;
@@ -1103,7 +1110,6 @@
            isUnderground = true;
            actionPhase = 4;
            birdTargetX = 90;
-           // ★ BUG FIX: 飛び出し土管は画面右外から再スタートではなく左からスクロールさせる
            transitionWallX = PIPE_WIDTH + 40; 
            bird.x = transitionWallX - PIPE_WIDTH;
            bird.y = transitionPipeY;
@@ -1135,7 +1141,6 @@
             isReverse = !isReverse;
             pipes = []; 
             birdTargetX = isReverse ? W - 90 : 90;
-            // ★ BUG FIX: 逆走開始時に理不尽に落ちないよう少し浮かせる
             bird.vy = cfg.flap * 0.5; 
             triggerFlash('186,104,200', 0.2);
             triggerShake(10, 0.2);
@@ -1388,7 +1393,6 @@
     ctx.closePath();
   }
 
-  // --- ★ BUG FIX: 鳥の奥に描画される背景用 ---
   function drawTransitionBg() {
       if (actionPhase >= 1 && actionPhase <= 3) {
           ctx.fillStyle = '#4e342e'; 
@@ -1406,7 +1410,6 @@
       }
   }
 
-  // --- ★ BUG FIX: 鳥の手前に描画される前景用 (土管に吸い込まれる奥行きを表現) ---
   function drawTransitionFg() {
       if (actionPhase >= 1 && actionPhase <= 3) {
           ctx.fillStyle = '#66bb6a'; 
@@ -1640,14 +1643,14 @@
     if (punch > 0.001) { ctx.translate(W / 2, H / 2); ctx.scale(1 + punch, 1 + punch); ctx.translate(-W / 2, -H / 2); }
     drawBackground(); 
     drawPipes(); 
-    drawTransitionBg(); // ★ 鳥の奥に描画
+    drawTransitionBg();
     drawGround(); 
     drawShockwaves(); 
     drawParticles(); 
     drawTrail(); 
     drawBirdGlow(); 
     drawBird(); 
-    drawTransitionFg(); // ★ 鳥の手前に描画 (吸い込まれ感)
+    drawTransitionFg();
     drawFloaters();
     ctx.restore();
     if (flashTimer > 0) {
