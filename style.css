@@ -250,6 +250,12 @@ canvas {
   color: #fff;
 }
 
+.diff-btn[data-diff="action"].active {
+  background: #4ea8de;
+  border-color: #4ea8de;
+  color: #fff;
+}
+
 /* --- 自動操作モード（難易度とは別の括り） --- */
 #mode-select {
   display: flex;
