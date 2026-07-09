@@ -22,7 +22,7 @@
           <button class="diff-btn" data-diff="normal">ノーマル</button>
           <button class="diff-btn" data-diff="hard">ハード</button>
           <button class="diff-btn" data-diff="insane">鬼</button>
-          <button class="diff-btn" data-diff="gravity">重力反転</button>
+          <!-- 重力反転を削除し、アクションに統合 -->
           <button class="diff-btn" data-diff="action">アクション</button>
         </div>
         <div id="mode-select">
@@ -77,22 +77,19 @@
         <div id="tutorial-body">
           <p><b>🕹 操作</b><br>タップ / クリック / スペースキーで羽ばたきます。押すたびに上へジャンプ。</p>
           <p><b>🎯 目的</b><br>土管のすき間を通り抜けてスコアを稼ごう。地面や土管に当たるとゲームオーバー。</p>
-          <p><b>💥 アクション</b><br>アクションモードでは確率で右側に壁と土管が出現し、地下世界へ突入！地下では進行方向が反転する「逆走」が発生することも。鳥の向きはそのままなので落ち着いて！</p>
+          <p><b>💥 アクション</b><br>確率で右側に壁と土管が出現し、コンクリートシェルター（地下）へ突入！<br>地下では「重力反転」や進行方向が反転する「逆走」が発生する超カオス空間。鳥の向きはそのままなので落ち着いて！</p>
           <p><b>🔄 ローテーション</b><br>スコアが 7 ポイント上がるごとに、世界の色やデザインが次々と変化します！</p>
           <p><b>✨ コンボ</b><br>すき間の<b>まん中</b>を通ると <b>COMBO</b>! 連続で決めるとボーナス演出。</p>
           <p><b>🟦 動く土管 / 🟪 スライド</b><br>スコアが上がると土管が上下に動いたり横にゆれたり。よく見て対応しよう。</p>
           <p><b>🟧 奇襲</b><br>上下の土管があとから伸びてくる! 伸びきるまですき間の位置がわからないので、最後まで気をぬかないで。</p>
           <p><b>🟥 シュリンク</b><br>近づくにつれてすき間がどんどん狭まる赤い土管。早めに真ん中へ!</p>
           <p><b>🟨 ロード</b><br>ハード・鬼では黄色い土管がすき間なく連なって「道」が出現! うねる道を駆け抜けよう。</p>
-          <p><b>🙃 重力反転レベル</b><br>「重力反転」を選ぶと途中で重力が反転! バッジの警告が出たら準備を。切り替え前後は少しスローになります。</p>
         </div>
         <button class="back-btn" data-back>← もどる</button>
       </div>
     </div>
   </div>
-  <!-- Firebase 設定（世界共通ランキング用。未設定ならローカル保存にフォールバック） -->
   <script src="firebase-config.js"></script>
-  <!-- ランキングのバックエンド（window.LB を提供） -->
   <script type="module" src="leaderboard.js"></script>
   <script src="game.js"></script>
 </body>
