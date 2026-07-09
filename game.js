@@ -1,5 +1,5 @@
 // ==========================================
-// Flappy Byte 本体 (最高権力者デバッグ・完全版)
+// Flappy Byte 本体 (コンクリシェルター＆重力反転統合版)
 // ==========================================
 (() => {
   const canvas = document.getElementById('game');
@@ -61,6 +61,7 @@
   const PIPE_WIDTH = 64;
   const PIPE_INTERVAL = 1.4;
 
+  // ★ gravity 難易度を削除し、action難易度に gravityFlip パラメータを追加
   const DIFFICULTIES = {
     normal: {
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
@@ -80,18 +81,12 @@
       slideChance: 0.5, ambushChance: 0.55, shrinkChance: 0.4,
       gravityFlip: false, road: true, actionMode: false,
     },
-    gravity: {
-      label: '重力反転', gravity: 1650, flap: -450, gapBase: 150, gapMin: 110, baseSpeed: 200,
-      movingPipeScore: 4, movingChance: 0.4, moveAmp: 48, moveSpeed: 1.3,
-      slideChance: 0.24, ambushChance: 0.3, shrinkChance: 0.16,
-      gravityFlip: true, gravityFlipScore: 4, flipArmDelay: 3.5,
-      flipNormalDur: [6, 3.5], flipReversedDur: [5, 3], road: false, actionMode: false,
-    },
     action: {
       label: 'アクション', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
       movingPipeScore: 4, movingChance: 0.2, moveAmp: 40, moveSpeed: 1.1,
       slideChance: 0.1, ambushChance: 0.1, shrinkChance: 0.1,
-      gravityFlip: false, road: false, actionMode: true,
+      gravityFlip: true, flipArmDelay: 3.5, flipNormalDur: [6, 3.5], flipReversedDur: [5, 3],
+      road: false, actionMode: true,
     },
   };
 
@@ -341,9 +336,10 @@
 
   function bestKey(diff) { return diff === 'normal' ? STORAGE_KEY : `${STORAGE_KEY}-${diff}`; }
 
-  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v3';
+  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v4'; // リセットフラグ更新
   if (!localStorage.getItem(BEST_RESET_FLAG)) {
     Object.keys(DIFFICULTIES).forEach(d => localStorage.removeItem(bestKey(d)));
+    localStorage.removeItem(`${STORAGE_KEY}-gravity`); // 古いデータのクリーンアップ
     localStorage.setItem(BEST_RESET_FLAG, '1');
   }
 
@@ -918,16 +914,27 @@
 
   function randRange([a, b]) { return a + Math.random() * (b - a); }
 
+  // ★ UPDATE: アクションモード地下専用の重力反転ロジック
   function updateGravityFlip(dt) {
-    if (!cfg.gravityFlip || controlChaosMode || roadActive || isPracticeMode || actionPhase > 0) return; 
+    if (!cfg.gravityFlip || controlChaosMode || roadActive || isPracticeMode) return; 
+    
+    // 地下のときだけタイマーを進める。地上にいるときはタイマーリセット＆重力を元に戻す
+    if (cfg.actionMode && actionPhase !== 5) {
+       if (gravityDir === -1) {
+           gravityDir = 1;
+           gravityBadge.classList.add('hidden');
+           gravityWarn = false;
+       }
+       gravityArmed = false; 
+       return;
+    }
 
     if (!gravityArmed) {
-      if (score >= cfg.gravityFlipScore) {
-        gravityArmed = true;
-        gravityPhaseTimer = cfg.flipArmDelay;
-      }
+      gravityArmed = true;
+      gravityPhaseTimer = cfg.flipArmDelay;
       return;
     }
+
     gravityPhaseTimer -= dt;
     if (!gravityWarn && gravityPhaseTimer <= GRAVITY_WARN_LEAD && gravityPhaseTimer > 0) {
       gravityWarn = true;
@@ -1051,7 +1058,7 @@
 
     bird.x += (birdTargetX - bird.x) * dt * 5;
 
-    // --- ★ BUG FIX: 壁の進行 ---
+    // 壁の進行
     if (actionPhase >= 1 && actionPhase <= 4) {
         transitionWallX -= speed * dt;
     }
@@ -1129,7 +1136,8 @@
         }
     }
 
-    if (!isPracticeMode && difficulty === 'gravity' && score >= 20) {
+    // ★ UPDATE: アクションモード地下（かつスコア20以上）の時に Chaos Mode を有効化
+    if (!isPracticeMode && cfg.actionMode && actionPhase === 5 && score >= 20) {
       if (!controlChaosMode) {
         controlChaosCooldown -= dt;
         if (controlChaosCooldown <= 0) {
@@ -1202,7 +1210,6 @@
         }
     } else {
         spawnTimer -= dt;
-        // --- ★ BUG FIX: タイマーが0以下になった瞬間に壁出現の割り込み判定を行う ---
         if (spawnTimer <= 0 && noSpawnTimer <= 0 && !roadActive) {
             let triggerWall = false;
             if (cfg.actionMode && actionPhase === 0 && !actionEventDone) {
@@ -1217,7 +1224,7 @@
                 noSpawnTimer = 9999; 
                 pipes = []; 
                 spawnFloater(W/2, H/3, '⚠ 地下へ...', '#ba68c8', 1.5);
-                spawnTimer = PIPE_INTERVAL; // リセットしておく
+                spawnTimer = PIPE_INTERVAL; 
             } else if (cfg.road && roadCooldown <= 0 && gravityDir === 1 && !gravityWarn) {
                 roadActive = true;
                 roadRemaining = ROAD_COUNT;
@@ -1333,12 +1340,49 @@
     }
   }
 
+  // ★ UPDATE: 背景をコンクリシェルター風に描画
   function drawBackground() {
     let topColor, botColor;
     
     if (isUnderground) {
-        topColor = '#3e2723';
-        botColor = '#5d4037';
+        topColor = '#242529'; // インダストリアルな暗いグレー
+        botColor = '#3a3c42';
+        
+        const grd = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
+        grd.addColorStop(0, topColor);
+        grd.addColorStop(1, botColor);
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, W, H - GROUND_H);
+
+        // コンクリのブロック線 (パララックススクロール)
+        ctx.strokeStyle = '#18191c';
+        ctx.lineWidth = 2;
+        const blockSize = 80;
+        const bgOffset = (groundOffset * 0.5) % blockSize; 
+        
+        ctx.beginPath();
+        for(let y = 0; y < H - GROUND_H; y += blockSize) {
+            ctx.moveTo(0, y);
+            ctx.lineTo(W, y);
+        }
+        for(let x = (isReverse ? bgOffset : -bgOffset) - blockSize; x < W; x += blockSize) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, H - GROUND_H);
+        }
+        ctx.stroke();
+
+        // 警戒色ライン（上部の天井装飾）
+        ctx.fillStyle = '#ffca28'; // 警戒色の黄色
+        ctx.fillRect(0, 0, W, 10);
+        ctx.fillStyle = '#212121'; // 警戒色の黒
+        for(let x = (isReverse ? bgOffset : -bgOffset) - 20; x < W + 40; x += 30) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x + 10, 0);
+            ctx.lineTo(x - 5, 10);
+            ctx.lineTo(x - 15, 10);
+            ctx.fill();
+        }
     } else {
         const tier = Math.min(6, Math.floor(score / 5));
         const speedMul = 1 + tier * 0.7;
@@ -1353,15 +1397,13 @@
         const sat = 62 + tier * 4;
         topColor = `hsl(${hue}, ${sat}%, 68%)`;
         botColor = `hsl(${hue + 20}, ${sat + 8}%, 84%)`;
-    }
+        
+        const grd = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
+        grd.addColorStop(0, topColor);
+        grd.addColorStop(1, botColor);
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, W, H - GROUND_H);
 
-    const grd = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
-    grd.addColorStop(0, topColor);
-    grd.addColorStop(1, botColor);
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, 0, W, H - GROUND_H);
-
-    if (!isUnderground) {
         for (const c of clouds) {
           ctx.globalAlpha = 0.55;
           ctx.fillStyle = '#ffffff';
@@ -1389,14 +1431,28 @@
     ctx.closePath();
   }
 
+  // ★ UPDATE: 遷移用の壁もコンクリ風に
   function drawTransitionBg() {
       if (actionPhase >= 1 && actionPhase <= 3) {
-          ctx.fillStyle = '#4e342e'; 
+          ctx.fillStyle = '#3a3c42'; // コンクリ色
           ctx.fillRect(transitionWallX, 0, W, H - GROUND_H);
-          ctx.strokeStyle = '#3e2723';
+          ctx.strokeStyle = '#18191c';
           ctx.lineWidth = 4;
           ctx.strokeRect(transitionWallX, 0, W, H - GROUND_H);
           
+          // 壁の縦警戒ライン
+          ctx.fillStyle = '#ffca28';
+          ctx.fillRect(transitionWallX + 8, 0, 10, H - GROUND_H);
+          ctx.fillStyle = '#212121';
+          for(let y = -20; y < H; y += 30) {
+              ctx.beginPath();
+              ctx.moveTo(transitionWallX + 8, y);
+              ctx.lineTo(transitionWallX + 18, y);
+              ctx.lineTo(transitionWallX + 18, y + 10);
+              ctx.lineTo(transitionWallX + 8, y + 20);
+              ctx.fill();
+          }
+
           ctx.fillStyle = '#2e7d32'; 
           ctx.fillRect(transitionWallX - PIPE_WIDTH, transitionPipeY - 40, PIPE_WIDTH, 80);
       }
@@ -1489,13 +1545,14 @@
     }
   }
 
+  // ★ UPDATE: 地面もアスファルト風に変更
   function drawGround() {
     const groundY = H - GROUND_H;
-    ctx.fillStyle = isUnderground ? '#4e342e' : '#ded895';
+    ctx.fillStyle = isUnderground ? '#32353a' : '#ded895';
     ctx.fillRect(0, groundY, W, GROUND_H);
-    ctx.fillStyle = isUnderground ? '#3e2723' : '#c9b96a';
+    ctx.fillStyle = isUnderground ? '#1e1f22' : '#c9b96a';
     for (let x = -groundOffset - 40; x < W; x += 40) { ctx.fillRect(x, groundY, 20, 10); }
-    ctx.fillStyle = isUnderground ? '#21110b' : '#8d6e3a';
+    ctx.fillStyle = isUnderground ? '#0f1011' : '#8d6e3a';
     ctx.fillRect(0, groundY, W, 4);
   }
 
