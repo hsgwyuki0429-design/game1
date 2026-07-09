@@ -462,3 +462,125 @@ canvas {
 #tutorial-body b {
   color: #ffd166;
 }
+/* --- style.css の末尾に以下のスタイルを追記してください --- */
+
+/* =========================================================
+   ランキングパネル用のスタイル
+   ========================================================= */
+
+.lb-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  justify-content: center;
+}
+
+.lb-tab {
+  font-size: 11px;
+  font-weight: bold;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lb-tab:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.lb-tab.active {
+  background: #ffd166;
+  color: #333;
+  border-color: #ffd166;
+  box-shadow: 0 0 8px rgba(255, 209, 102, 0.4);
+}
+
+#leaderboard-list {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 8px;
+  height: 220px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lb-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lb-item:last-child {
+  border-bottom: none;
+}
+
+.lb-item.me {
+  background: rgba(255, 209, 102, 0.15);
+  border-radius: 6px;
+}
+
+.lb-rank {
+  font-weight: 800;
+  color: #ffd166;
+  width: 28px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.lb-info {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  margin-left: 8px;
+}
+
+.lb-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.lb-date {
+  font-size: 11px;
+  color: #a0a0a0;
+  margin-top: 2px;
+}
+
+.lb-score {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  margin-right: 4px;
+}
+
+.lb-loading {
+  text-align: center;
+  color: #a0a0a0;
+  margin-top: 40px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* スクロールバーのカスタマイズ (Webkit) */
+#leaderboard-list::-webkit-scrollbar {
+  width: 6px;
+}
+#leaderboard-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05); 
+  border-radius: 4px;
+}
+#leaderboard-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2); 
+  border-radius: 4px;
+}
+#leaderboard-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4); 
+}
