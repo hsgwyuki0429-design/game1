@@ -1,0 +1,117 @@
+// ==========================================================================
+// ランキング画面のUIを制御するスクリプト
+// ==========================================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  const lbBtn = document.querySelector('.menu-btn[data-panel="leaderboard"]');
+  const diffTabs = document.querySelectorAll('#lb-diff-select .lb-tab');
+  const periodTabs = document.querySelectorAll('#lb-period-select .lb-tab');
+  const listEl = document.getElementById('leaderboard-list');
+  
+  let currentDiff = 'normal';
+  let currentPeriod = 'daily';
+
+  if(lbBtn) {
+    lbBtn.addEventListener('click', () => {
+      // パネルが開かれたら描画をリクエスト
+      renderLeaderboard();
+    });
+  }
+
+  diffTabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      diffTabs.forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      currentDiff = e.target.getAttribute('data-lbdiff');
+      renderLeaderboard();
+    });
+  });
+
+  periodTabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      periodTabs.forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      currentPeriod = e.target.getAttribute('data-period');
+      renderLeaderboard();
+    });
+  });
+
+  function formatDate(timestamp) {
+    if (!timestamp) return '----/--/-- --:--';
+    const d = new Date(timestamp);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${y}/${m}/${dd} ${h}:${min}`;
+  }
+
+  function escapeHTML(str) {
+    return str.replace(/[&<>'"]/g, 
+      tag => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag)
+    );
+  }
+
+  // 修正: window.LBが準備できるのを安全に待機する処理を追加
+  async function renderLeaderboard() {
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="lb-loading">読み込み中...</div>';
+    
+    // leaderboard.js がモジュールとして読み込まれるまで最大1秒ほど待つ
+    let waitCount = 0;
+    while (!window.LB && waitCount < 20) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      waitCount++;
+    }
+
+    if (!window.LB) {
+      listEl.innerHTML = '<div class="lb-loading">データの読み込みに失敗しました</div>';
+      return;
+    }
+
+    // バックエンドの初期化完了を待機
+    if (window.LB.ready) {
+      await window.LB.ready;
+    }
+
+    try {
+      const data = await window.LB.top(currentDiff, currentPeriod);
+      const myUid = window.LB.getUid();
+      
+      if (!data || data.length === 0) {
+        listEl.innerHTML = '<div class="lb-loading">まだ記録がありません<br>最初の記録を作ろう！</div>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      data.forEach((item, index) => {
+        const isMe = item.uid === myUid;
+        
+        const row = document.createElement('div');
+        row.className = `lb-item ${isMe ? 'me' : ''}`;
+        
+        row.innerHTML = `
+          <div class="lb-rank">${index + 1}</div>
+          <div class="lb-info">
+            <div class="lb-name">${escapeHTML(item.name || '名無し')}</div>
+            <div class="lb-date">${formatDate(item.timestamp)}</div>
+          </div>
+          <div class="lb-score">${item.score}</div>
+        `;
+        listEl.appendChild(row);
+      });
+    } catch (e) {
+      console.error(e);
+      listEl.innerHTML = '<div class="lb-loading">データの取得に失敗しました</div>';
+    }
+  }
+});
+
+
