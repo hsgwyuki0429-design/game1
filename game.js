@@ -1,5 +1,5 @@
 // ==========================================
-// Flappy Byte 本体 (コンクリシェルター＆重力反転統合版)
+// Flappy Byte 本体 (重力反転の完璧なタイミング調整版)
 // ==========================================
 (() => {
   const canvas = document.getElementById('game');
@@ -61,7 +61,6 @@
   const PIPE_WIDTH = 64;
   const PIPE_INTERVAL = 1.4;
 
-  // ★ gravity 難易度を削除し、action難易度に gravityFlip パラメータを追加
   const DIFFICULTIES = {
     normal: {
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
@@ -336,10 +335,10 @@
 
   function bestKey(diff) { return diff === 'normal' ? STORAGE_KEY : `${STORAGE_KEY}-${diff}`; }
 
-  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v4'; // リセットフラグ更新
+  const BEST_RESET_FLAG = 'flappy-byte-best-reset-v4';
   if (!localStorage.getItem(BEST_RESET_FLAG)) {
     Object.keys(DIFFICULTIES).forEach(d => localStorage.removeItem(bestKey(d)));
-    localStorage.removeItem(`${STORAGE_KEY}-gravity`); // 古いデータのクリーンアップ
+    localStorage.removeItem(`${STORAGE_KEY}-gravity`);
     localStorage.setItem(BEST_RESET_FLAG, '1');
   }
 
@@ -483,7 +482,9 @@
   let autoCooldown = 0;
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
   
-  // ★ アクション・地下遷移用変数
+  // ★ 新規: 反転の保留（ペンディング）フラグ
+  let pendingGravityFlip = false; 
+
   let actionPhase = 0; 
   let isUnderground = false;
   let isReverse = false;
@@ -558,6 +559,7 @@
     gravityArmed = false;
     gravityPhaseTimer = 0;
     gravityWarn = false;
+    pendingGravityFlip = false; // ★ リセット
     noSpawnTimer = 0;
 
     roadActive = false;
@@ -835,7 +837,6 @@
       return;
     }
     if (state === 'playing') {
-      // 遷移中（フェーズ1〜4）は操作不能にする
       if (actionPhase >= 1 && actionPhase <= 4) return;
       
       if (controlChaosMode) {
@@ -914,38 +915,11 @@
 
   function randRange([a, b]) { return a + Math.random() * (b - a); }
 
-  // ★ UPDATE: アクションモード地下専用の重力反転ロジック
-  function updateGravityFlip(dt) {
-    if (!cfg.gravityFlip || controlChaosMode || roadActive || isPracticeMode) return; 
-    
-    // 地下のときだけタイマーを進める。地上にいるときはタイマーリセット＆重力を元に戻す
-    if (cfg.actionMode && actionPhase !== 5) {
-       if (gravityDir === -1) {
-           gravityDir = 1;
-           gravityBadge.classList.add('hidden');
-           gravityWarn = false;
-       }
-       gravityArmed = false; 
-       return;
-    }
-
-    if (!gravityArmed) {
-      gravityArmed = true;
-      gravityPhaseTimer = cfg.flipArmDelay;
-      return;
-    }
-
-    gravityPhaseTimer -= dt;
-    if (!gravityWarn && gravityPhaseTimer <= GRAVITY_WARN_LEAD && gravityPhaseTimer > 0) {
-      gravityWarn = true;
-      playGravityWarn();
-      gravityBadge.textContent = gravityDir === 1 ? '⚠ まもなく重力反転' : '⚠ まもなく復帰';
-      gravityBadge.classList.remove('hidden', 'active');
-      gravityBadge.classList.add('warn');
-    }
-    if (gravityPhaseTimer <= 0) {
+  // ★ NEW: 重力反転を実際に実行する関数
+  function executeGravityFlip() {
       gravityDir *= -1;
       gravityWarn = false;
+      pendingGravityFlip = false;
       const levelBonus = Math.min(2, Math.floor(score / 10) * 0.5);
       gravityPhaseTimer = gravityDir === -1 ? randRange(cfg.flipReversedDur) + levelBonus : randRange(cfg.flipNormalDur);
 
@@ -965,6 +939,51 @@
         gravityBadge.classList.add('hidden');
         gravityBadge.classList.remove('warn', 'active');
       }
+  }
+
+  function updateGravityFlip(dt) {
+    if (!cfg.gravityFlip || controlChaosMode || roadActive || isPracticeMode) return; 
+    
+    if (cfg.actionMode && actionPhase !== 5) {
+       if (gravityDir === -1) {
+           gravityDir = 1;
+           gravityBadge.classList.add('hidden');
+           gravityWarn = false;
+       }
+       gravityArmed = false; 
+       pendingGravityFlip = false;
+       return;
+    }
+
+    if (!gravityArmed) {
+      gravityArmed = true;
+      gravityPhaseTimer = cfg.flipArmDelay;
+      return;
+    }
+
+    // ★ NEW: 反転準備状態のチェック
+    if (pendingGravityFlip) {
+      // 画面にアクティブな土管がなければ（＝遷移時やクリア後など）即座に反転する
+      const activePipes = pipes.filter(p => !p.passed);
+      if (activePipes.length === 0) {
+          executeGravityFlip();
+      }
+      return;
+    }
+
+    gravityPhaseTimer -= dt;
+    if (!gravityWarn && gravityPhaseTimer <= GRAVITY_WARN_LEAD && gravityPhaseTimer > 0) {
+      gravityWarn = true;
+      playGravityWarn();
+      gravityBadge.textContent = gravityDir === 1 ? '⚠ まもなく重力反転' : '⚠ まもなく復帰';
+      gravityBadge.classList.remove('hidden', 'active');
+      gravityBadge.classList.add('warn');
+    }
+
+    // タイマーがゼロになってもすぐ反転させない。保留状態へ移行。
+    if (gravityPhaseTimer <= 0) {
+      pendingGravityFlip = true;
+      gravityBadge.textContent = '⚠ 準備完了 (通過で発動)';
     }
   }
 
@@ -1000,7 +1019,6 @@
     }
     if (state !== 'playing' || autoCooldown > 0) return;
     
-    // 遷移中（フェーズ1〜4）は自動操作も無効
     if (actionPhase >= 1 && actionPhase <= 4) return;
     
     const doFlap = () => { flap(); autoCooldown = 0.06; };
@@ -1058,30 +1076,24 @@
 
     bird.x += (birdTargetX - bird.x) * dt * 5;
 
-    // 壁の進行
     if (actionPhase >= 1 && actionPhase <= 4) {
         transitionWallX -= speed * dt;
     }
 
-    // フェーズ1: 壁接近 (自動演出) 
     if (actionPhase === 1) {
        const pipeLeft = transitionWallX - PIPE_WIDTH;
        
-       bird.vy = 0; // 重力落下を止める
-       // なめらかに土管の中心高さへ移動させる
+       bird.vy = 0; 
        bird.y += (transitionPipeY - bird.y) * dt * 5;
-       // 角度も水平に戻す
        bird.rot += (0 - bird.rot) * dt * 5;
        
        if (bird.x + bird.r > pipeLeft) {
-          actionPhase = 2; // 土管入り口に触れたら吸い込まれ開始
+          actionPhase = 2; 
        }
     }
     
-    // フェーズ2: 吸い込まれ
     if (actionPhase === 2) {
        bird.vy = 0;
-       // 壁の動きに追従しつつ奥（右）へ入り込む
        bird.x += (transitionWallX - 30 - bird.x) * dt * 8;
        bird.y += (transitionPipeY - bird.y) * dt * 8;
        birdScale = Math.max(0, birdScale - dt * 2.5);
@@ -1090,7 +1102,6 @@
        }
     }
 
-    // フェーズ3: フェード暗転
     if (actionPhase === 3) {
        fadeAlpha += dt * 3;
        if (fadeAlpha >= 1) {
@@ -1106,11 +1117,9 @@
        }
     }
 
-    // フェーズ4: 飛び出し
     if (actionPhase === 4) {
        fadeAlpha = Math.max(0, fadeAlpha - dt * 2);
        birdScale = Math.min(1, birdScale + dt * 2.5);
-       // 鳥は定位置(90)へ向かう
        bird.x += (birdTargetX - bird.x) * dt * 6;
        bird.vy = 0;
        if (fadeAlpha <= 0 && birdScale >= 1 && bird.x >= birdTargetX - 2) {
@@ -1136,7 +1145,6 @@
         }
     }
 
-    // ★ UPDATE: アクションモード地下（かつスコア20以上）の時に Chaos Mode を有効化
     if (!isPracticeMode && cfg.actionMode && actionPhase === 5 && score >= 20) {
       if (!controlChaosMode) {
         controlChaosCooldown -= dt;
@@ -1157,6 +1165,7 @@
           gravityBadge.classList.remove('warn');
           spawnFloater(W / 2, H / 2 - 40, "SYSTEM RESTORED", "#4caf50", 1.5);
           beep({ freq: 800, glideTo: 1200, duration: 0.2, type: 'square', volume: 0.1 });
+          pendingGravityFlip = false; 
           if (gravityDir === -1) { gravityPhaseTimer = 1.5; gravityWarn = false; }
           else { gravityPhaseTimer = randRange(cfg.flipNormalDur); gravityWarn = false; }
         }
@@ -1302,7 +1311,12 @@
         void scoreEl.offsetWidth;
         scoreEl.classList.add(milestone ? 'pop-big' : 'pop');
 
-        if (cfg.actionMode && actionPhase === 5 && Math.random() < 0.25 && reverseTransitionTimer <= 0) {
+        // ★ NEW: 通過直後の安全なタイミングで重力を反転！
+        if (pendingGravityFlip) {
+            executeGravityFlip();
+        } 
+        // 反転と同時に空間異常が起こらないようにする（混乱防止）
+        else if (cfg.actionMode && actionPhase === 5 && Math.random() < 0.25 && reverseTransitionTimer <= 0) {
             reverseTransitionTimer = 1.5; 
             noSpawnTimer = 3.0; 
             spawnFloater(W/2, H/3, '⚠ 空間異常', '#ff4d6d', 1.6);
@@ -1340,12 +1354,11 @@
     }
   }
 
-  // ★ UPDATE: 背景をコンクリシェルター風に描画
   function drawBackground() {
     let topColor, botColor;
     
     if (isUnderground) {
-        topColor = '#242529'; // インダストリアルな暗いグレー
+        topColor = '#242529'; 
         botColor = '#3a3c42';
         
         const grd = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
@@ -1354,7 +1367,6 @@
         ctx.fillStyle = grd;
         ctx.fillRect(0, 0, W, H - GROUND_H);
 
-        // コンクリのブロック線 (パララックススクロール)
         ctx.strokeStyle = '#18191c';
         ctx.lineWidth = 2;
         const blockSize = 80;
@@ -1371,10 +1383,9 @@
         }
         ctx.stroke();
 
-        // 警戒色ライン（上部の天井装飾）
-        ctx.fillStyle = '#ffca28'; // 警戒色の黄色
+        ctx.fillStyle = '#ffca28'; 
         ctx.fillRect(0, 0, W, 10);
-        ctx.fillStyle = '#212121'; // 警戒色の黒
+        ctx.fillStyle = '#212121'; 
         for(let x = (isReverse ? bgOffset : -bgOffset) - 20; x < W + 40; x += 30) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
@@ -1431,16 +1442,14 @@
     ctx.closePath();
   }
 
-  // ★ UPDATE: 遷移用の壁もコンクリ風に
   function drawTransitionBg() {
       if (actionPhase >= 1 && actionPhase <= 3) {
-          ctx.fillStyle = '#3a3c42'; // コンクリ色
+          ctx.fillStyle = '#3a3c42'; 
           ctx.fillRect(transitionWallX, 0, W, H - GROUND_H);
           ctx.strokeStyle = '#18191c';
           ctx.lineWidth = 4;
           ctx.strokeRect(transitionWallX, 0, W, H - GROUND_H);
           
-          // 壁の縦警戒ライン
           ctx.fillStyle = '#ffca28';
           ctx.fillRect(transitionWallX + 8, 0, 10, H - GROUND_H);
           ctx.fillStyle = '#212121';
@@ -1545,7 +1554,6 @@
     }
   }
 
-  // ★ UPDATE: 地面もアスファルト風に変更
   function drawGround() {
     const groundY = H - GROUND_H;
     ctx.fillStyle = isUnderground ? '#32353a' : '#ded895';
@@ -1718,7 +1726,8 @@
 
   function flipTimeScale() {
     if (state !== 'playing') return 1;
-    const inFlipWindow = (gravityArmed && !controlChaosMode && gravityPhaseTimer > 0 && gravityPhaseTimer <= GRAVITY_WARN_LEAD) || (noSpawnTimer > 0);
+    // ★ 準備中もスローモーションにして、反転が近いことを強調
+    const inFlipWindow = (gravityArmed && !controlChaosMode && (gravityPhaseTimer > 0 && gravityPhaseTimer <= GRAVITY_WARN_LEAD || pendingGravityFlip)) || (noSpawnTimer > 0);
     return inFlipWindow ? FLIP_TIME_SCALE : 1;
   }
 
