@@ -1,5 +1,5 @@
 // ==========================================
-// Flappy Byte 本体
+// Flappy Byte 本体 (最高権力者デバッグ・演出強化版)
 // ==========================================
 (() => {
   const canvas = document.getElementById('game');
@@ -27,9 +27,6 @@
   const charGrid = document.getElementById('char-grid');
   const pipeGrid = document.getElementById('pipe-grid');
 
-  // ==========================================
-  // ★ 自動操作モード
-  // ==========================================
   const autoBtn = document.getElementById('auto-btn');
   let isAutoPilot = false;
   function updateAutoBtn() {
@@ -44,15 +41,9 @@
   });
   updateAutoBtn();
 
-  // ==========================================
-  // ★ 練習モードの状態
-  // ==========================================
   let isPracticeMode = false;
   let practiceSettings = { normal: true, blue: false, yellow: false, red: false, purple: false, road: false };
 
-  // ==========================================
-  // ★ ランキングボタン
-  // ==========================================
   const lbBtn = document.createElement('button');
   lbBtn.className = 'menu-btn';
   lbBtn.innerHTML = '🏆 ランキング';
@@ -75,32 +66,35 @@
       label: 'ノーマル', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
       movingPipeScore: 4, movingChance: 0.4, moveAmp: 40, moveSpeed: 1.1,
       slideChance: 0.3, ambushChance: 0.34, shrinkChance: 0.2,
-      gravityFlip: false, road: false,
+      gravityFlip: false, road: false, actionMode: false,
     },
     hard: {
       label: 'ハード', gravity: 1680, flap: -450, gapBase: 145, gapMin: 105, baseSpeed: 205,
       movingPipeScore: 2, movingChance: 0.5, moveAmp: 52, moveSpeed: 1.5,
       slideChance: 0.42, ambushChance: 0.46, shrinkChance: 0.3,
-      gravityFlip: false, road: true,
+      gravityFlip: false, road: true, actionMode: false,
     },
     insane: {
       label: '鬼', gravity: 1850, flap: -470, gapBase: 128, gapMin: 95, baseSpeed: 228,
       movingPipeScore: 0, movingChance: 0.6, moveAmp: 62, moveSpeed: 1.9,
       slideChance: 0.5, ambushChance: 0.55, shrinkChance: 0.4,
-      gravityFlip: false, road: true,
+      gravityFlip: false, road: true, actionMode: false,
     },
     gravity: {
       label: '重力反転', gravity: 1650, flap: -450, gapBase: 150, gapMin: 110, baseSpeed: 200,
       movingPipeScore: 4, movingChance: 0.4, moveAmp: 48, moveSpeed: 1.3,
       slideChance: 0.24, ambushChance: 0.3, shrinkChance: 0.16,
       gravityFlip: true, gravityFlipScore: 4, flipArmDelay: 3.5,
-      flipNormalDur: [6, 3.5], flipReversedDur: [5, 3], road: false,
+      flipNormalDur: [6, 3.5], flipReversedDur: [5, 3], road: false, actionMode: false,
+    },
+    action: {
+      label: 'アクション', gravity: 1500, flap: -430, gapBase: 165, gapMin: 120, baseSpeed: 180,
+      movingPipeScore: 4, movingChance: 0.2, moveAmp: 40, moveSpeed: 1.1,
+      slideChance: 0.1, ambushChance: 0.1, shrinkChance: 0.1,
+      gravityFlip: false, road: false, actionMode: true,
     },
   };
 
-  // ==========================================
-  // ★ モーダルUI
-  // ==========================================
   const stopEvent = (e) => { e.stopPropagation(); };
 
   function showNameInputModal(newScore, diff) {
@@ -356,7 +350,6 @@
   let best = Number(localStorage.getItem(bestKey(difficulty)) || 0);
   bestEl.textContent = best;
 
-  // 🐞 バグ修正: モード切り替え時のボタンテキストの一貫性確保
   function updateStartBtnUI() {
     if (state === 'gameover') {
       startBtn.textContent = isPracticeMode ? 'もう一度 (練習)' : 'もう一度';
@@ -377,7 +370,7 @@
   diffButtons.forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      isPracticeMode = false; // 🐞 修正: 難易度変更時に確実に通常モードに戻す
+      isPracticeMode = false; 
       selectDifficulty(btn.dataset.diff);
       updateStartBtnUI();
     });
@@ -471,7 +464,6 @@
   buildCharGrid();
   buildPipeGrid();
 
-  // ★ ローテーション用 取得関数
   function getCurrentChar() {
     const keys = Object.keys(CHARACTERS);
     const baseIdx = Math.max(0, keys.indexOf(character));
@@ -494,6 +486,18 @@
   let roadActive, roadRemaining, roadSpawnTimer, roadPhase, roadCooldown, roadHue;
   let autoCooldown = 0;
   let controlChaosMode, controlChaosTimer, controlChaosCooldown;
+  
+  // ★ アクション・地下遷移用変数
+  let actionPhase = 0; 
+  let isUnderground = false;
+  let isReverse = false;
+  let actionEventDone = false;
+  let transitionWallX = 0;
+  let transitionPipeY = 0;
+  let birdScale = 1;
+  let reverseTransitionTimer = 0;
+  let birdTargetX = 90;
+  let fadeAlpha = 0;
 
   const GRAVITY_WARN_LEAD = 2.0;
   const GRAVITY_CLEAR_AFTER = 1.0;
@@ -508,9 +512,17 @@
   const AMBUSH_GROW_END_X = W * 0.42;
 
   function ambushGrow(p) {
-    const t = (AMBUSH_GROW_START_X - p.x) / (AMBUSH_GROW_START_X - AMBUSH_GROW_END_X);
-    const c = Math.max(0, Math.min(1, t));
-    return c * c;
+    if (isReverse) {
+      const startX = W * 0.05;
+      const endX = W * 0.58;
+      const t = (p.x - startX) / (endX - startX);
+      const c = Math.max(0, Math.min(1, t));
+      return c * c;
+    } else {
+      const t = (AMBUSH_GROW_START_X - p.x) / (AMBUSH_GROW_START_X - AMBUSH_GROW_END_X);
+      const c = Math.max(0, Math.min(1, t));
+      return c * c;
+    }
   }
 
   function initClouds() {
@@ -565,13 +577,24 @@
     combo = 0;
     autoCooldown = 0;
 
+    actionPhase = 0;
+    isUnderground = false;
+    isReverse = false;
+    actionEventDone = false;
+    transitionWallX = 0;
+    transitionPipeY = 0;
+    birdScale = 1;
+    reverseTransitionTimer = 0;
+    birdTargetX = 90;
+    fadeAlpha = 0;
+
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
     initClouds();
     scoreEl.textContent = '0';
     newBestLine.classList.add('hidden');
     
-    updateStartBtnUI(); // UIテキスト更新
+    updateStartBtnUI();
   }
 
   let audioCtx = null;
@@ -731,7 +754,7 @@
     squash += (1 - squash) * Math.min(1, dt * 10);
     punch += (0 - punch) * Math.min(1, dt * 9);
 
-    if (state === 'playing') trail.push({ x: bird.x, y: bird.y, life: 0.35, maxLife: 0.35 });
+    if (state === 'playing' && birdScale > 0.5) trail.push({ x: bird.x, y: bird.y, life: 0.35, maxLife: 0.35 });
     for (const t of trail) t.life -= dt;
     trail = trail.filter(t => t.life > 0);
     for (const s of shockwaves) s.life -= dt;
@@ -779,9 +802,11 @@
     const span = Math.max(20, H - GROUND_H - margin * 2 - layoutGap);
     const isBlue = gravityDir === -1; 
     let baseGapY = margin + Math.random() * span + layoutGap / 2;
+    
+    const startX = isReverse ? -PIPE_WIDTH : W + PIPE_WIDTH;
 
     pipes.push({
-      x: W + PIPE_WIDTH, baseX: W + PIPE_WIDTH, gapY: baseGapY, baseGapY,
+      x: startX, baseX: startX, gapY: baseGapY, baseGapY,
       gap: isShrink ? shrinkStart : gap, gapFinal: gap, shrinkStart,
       passed: false, moving: canMove, moveAmp,
       moveSpeed: canMove ? cfg.moveSpeed * (0.8 + Math.random() * 0.4) : 0, movePhase: Math.random() * Math.PI * 2,
@@ -797,8 +822,9 @@
     const gapY = margin + gap / 2 + (0.5 + 0.5 * Math.sin(roadPhase)) * span;
 
     roadHue = (roadHue + 25) % 360;
+    const startX = isReverse ? -PIPE_WIDTH : W + PIPE_WIDTH;
     pipes.push({
-      x: W + PIPE_WIDTH, baseX: W + PIPE_WIDTH, gapY, baseGapY: gapY, gap,
+      x: startX, baseX: startX, gapY, baseGapY: gapY, gap,
       passed: false, moving: false, moveAmp: 0, moveSpeed: 0, movePhase: 0,
       isSlideX: false, slideXPhase: 0, isAmbush: false, isBlue: false,
       isRoad: true, isRoadStart: isStart, 
@@ -813,6 +839,9 @@
       return;
     }
     if (state === 'playing') {
+      // ★ 遷移中（フェーズ1〜4）は操作不能にする
+      if (actionPhase >= 1 && actionPhase <= 4) return;
+      
       if (controlChaosMode) {
         gravityDir *= -1;
         bird.vy = 0;
@@ -862,7 +891,7 @@
     overlayTitle.textContent = isPracticeMode ? '練習終了' : 'ゲームオーバー';
     overlaySub.textContent = `スコア: ${score}`;
     
-    updateStartBtnUI(); // 🐞 修正: 死んだ直後も現在のモードにあわせてボタン名を変更
+    updateStartBtnUI();
     overlay.classList.remove('hidden');
 
     if (isNewBest && score > 0) {
@@ -890,7 +919,7 @@
   function randRange([a, b]) { return a + Math.random() * (b - a); }
 
   function updateGravityFlip(dt) {
-    if (!cfg.gravityFlip || controlChaosMode || roadActive || isPracticeMode) return; 
+    if (!cfg.gravityFlip || controlChaosMode || roadActive || isPracticeMode || actionPhase > 0) return; 
 
     if (!gravityArmed) {
       if (score >= cfg.gravityFlipScore) {
@@ -940,8 +969,16 @@
   }
 
   function aiCorridor(p) {
-    const tIn = Math.max(0, (p.x - bird.r - bird.x) / speed);
-    const tOut = Math.max(0, (p.x + PIPE_WIDTH + bird.r - bird.x) / speed);
+    let distIn, distOut;
+    if (isReverse) {
+      distIn = bird.x - bird.r - (p.x + PIPE_WIDTH);
+      distOut = bird.x + bird.r - p.x;
+    } else {
+      distIn = p.x - bird.r - bird.x;
+      distOut = p.x + PIPE_WIDTH + bird.r - bird.x;
+    }
+    const tIn = Math.max(0, distIn / speed);
+    const tOut = Math.max(0, distOut / speed);
     const tB = Math.min(tOut, tIn + 0.18);
     const a = aiGapAt(p, tIn);
     const b = aiGapAt(p, tB);
@@ -955,14 +992,17 @@
       return;
     }
     if (state !== 'playing' || autoCooldown > 0) return;
+    
+    // 遷移中（フェーズ1〜4）は自動操作も無効
+    if (actionPhase >= 1 && actionPhase <= 4) return;
+    
     const doFlap = () => { flap(); autoCooldown = 0.06; };
 
     let first = null, second = null;
-    for (const p of pipes) {
-      if (p.x + PIPE_WIDTH + bird.r > bird.x) {
-        if (!first) { first = p; } else { second = p; break; }
-      }
-    }
+    const activePipes = pipes.filter(p => isReverse ? (p.x < bird.x) : (p.x + PIPE_WIDTH + bird.r > bird.x));
+    activePipes.sort((a, b) => isReverse ? (b.x - a.x) : (a.x - b.x));
+    if (activePipes.length > 0) first = activePipes[0];
+    if (activePipes.length > 1) second = activePipes[1];
 
     const MARGIN = 5;
     let corTop = bird.r + 6;
@@ -971,7 +1011,7 @@
       const c = aiCorridor(first);
       corTop = Math.max(corTop, c.top + bird.r + MARGIN);
       corBot = Math.min(corBot, c.bot - bird.r - MARGIN);
-      if (second && second.x - first.x < 210) {
+      if (second && Math.abs(second.x - first.x) < 210) {
         const c2 = aiCorridor(second);
         corTop = Math.max(corTop, c2.top + bird.r + MARGIN);
         corBot = Math.min(corBot, c2.bot - bird.r - MARGIN);
@@ -1006,7 +1046,102 @@
 
     elapsed += dt;
     speed = cfg.baseSpeed + Math.min(140, elapsed * 6);
-    groundOffset = (groundOffset + speed * dt) % 40;
+    const groundDir = (isReverse && actionPhase === 5) ? -1 : 1;
+    groundOffset = (groundOffset + speed * dt * groundDir + 40) % 40;
+
+    bird.x += (birdTargetX - bird.x) * dt * 5;
+
+    // --- ★ BUG FIX: 壁と土管の進行 (止まるバグ修正) ---
+    if (actionPhase >= 1 && actionPhase <= 4) {
+        transitionWallX -= speed * dt;
+    }
+
+    // --- ★ BUG FIX: 練習モードでは地下イベントを封印 ---
+    if (!isPracticeMode && cfg.actionMode && !actionEventDone && score >= 2 && score <= 14 && actionPhase === 0 && !roadActive && spawnTimer <= 0) {
+       if (Math.random() < 0.15) {
+          actionPhase = 1;
+          transitionWallX = W + 50;
+          transitionPipeY = H / 2;
+          noSpawnTimer = 9999; 
+          pipes = []; 
+          spawnFloater(W/2, H/3, '⚠ 地下へ...', '#ba68c8', 1.5);
+       }
+    }
+
+    // フェーズ1: 壁接近 (自動演出) 
+    if (actionPhase === 1) {
+       const pipeLeft = transitionWallX - PIPE_WIDTH;
+       
+       bird.vy = 0; // 重力落下を止める
+       // なめらかに土管の中心高さへ移動させる
+       bird.y += (transitionPipeY - bird.y) * dt * 5;
+       // 角度も水平に戻す
+       bird.rot += (0 - bird.rot) * dt * 5;
+       
+       if (bird.x + bird.r > pipeLeft) {
+          actionPhase = 2; // 土管入り口に触れたら吸い込まれ開始
+       }
+    }
+    
+    // フェーズ2: 吸い込まれ
+    if (actionPhase === 2) {
+       bird.vy = 0;
+       // 壁の動きに追従しつつ奥（右）へ入り込む
+       bird.x += (transitionWallX - 30 - bird.x) * dt * 8;
+       bird.y += (transitionPipeY - bird.y) * dt * 8;
+       birdScale = Math.max(0, birdScale - dt * 2.5);
+       if (birdScale <= 0) {
+           actionPhase = 3;
+       }
+    }
+
+    // フェーズ3: フェード暗転
+    if (actionPhase === 3) {
+       fadeAlpha += dt * 3;
+       if (fadeAlpha >= 1) {
+           fadeAlpha = 1;
+           isUnderground = true;
+           actionPhase = 4;
+           birdTargetX = 90;
+           // ★ BUG FIX: 飛び出し土管は画面右外から再スタートではなく左からスクロールさせる
+           transitionWallX = PIPE_WIDTH + 40; 
+           bird.x = transitionWallX - PIPE_WIDTH;
+           bird.y = transitionPipeY;
+           birdScale = 0;
+           bird.vy = 0;
+       }
+    }
+
+    // フェーズ4: 飛び出し
+    if (actionPhase === 4) {
+       fadeAlpha = Math.max(0, fadeAlpha - dt * 2);
+       birdScale = Math.min(1, birdScale + dt * 2.5);
+       // 鳥は定位置(90)へ向かう
+       bird.x += (birdTargetX - bird.x) * dt * 6;
+       bird.vy = 0;
+       if (fadeAlpha <= 0 && birdScale >= 1 && bird.x >= birdTargetX - 2) {
+           fadeAlpha = 0;
+           actionPhase = 5;
+           actionEventDone = true;
+           noSpawnTimer = 0;
+           spawnTimer = PIPE_INTERVAL;
+           bird.vy = cfg.flap * 0.6; 
+       }
+    }
+
+    if (reverseTransitionTimer > 0) {
+        reverseTransitionTimer -= dt;
+        if (reverseTransitionTimer <= 0) {
+            isReverse = !isReverse;
+            pipes = []; 
+            birdTargetX = isReverse ? W - 90 : 90;
+            // ★ BUG FIX: 逆走開始時に理不尽に落ちないよう少し浮かせる
+            bird.vy = cfg.flap * 0.5; 
+            triggerFlash('186,104,200', 0.2);
+            triggerShake(10, 0.2);
+            playGravityFlip(isReverse);
+        }
+    }
 
     if (!isPracticeMode && difficulty === 'gravity' && score >= 20) {
       if (!controlChaosMode) {
@@ -1036,13 +1171,13 @@
 
     updateGravityFlip(dt);
 
-    bird.vy += cfg.gravity * gravityDir * dt;
-    bird.y += bird.vy * dt;
-    bird.rot = Math.max(-0.5, Math.min(1.2, (bird.vy / 600) * gravityDir));
+    if (actionPhase === 0 || actionPhase === 5) {
+        bird.vy += cfg.gravity * gravityDir * dt;
+        bird.y += bird.vy * dt;
+        bird.rot = Math.max(-0.5, Math.min(1.2, (bird.vy / 600) * gravityDir));
+    }
 
     if (noSpawnTimer > 0) noSpawnTimer = Math.max(0, noSpawnTimer - dt);
-
-    // 🐞 修正: モードにかかわらずクールダウンは常に消費する（無限ロード地獄の防止）
     if (roadCooldown > 0) roadCooldown -= dt;
 
     if (isPracticeMode) {
@@ -1053,13 +1188,9 @@
         if (practiceSettings.red) availPipes.push('red');
         if (practiceSettings.purple) availPipes.push('purple');
 
-        // 🐞 修正: 完全に何も選ばれていない「虚無モード」を防ぐフェイルセーフ
-        if (availPipes.length === 0 && !practiceSettings.road) {
-            availPipes.push('normal');
-        }
+        if (availPipes.length === 0 && !practiceSettings.road) availPipes.push('normal');
 
         if (availPipes.length === 0 && practiceSettings.road) {
-            // ロードのみ選択時の無限ロード
             if (!roadActive) {
                 roadActive = true;
                 roadRemaining = Infinity; 
@@ -1068,7 +1199,6 @@
                 roadSpawnTimer = ROAD_INTERVAL;
             }
         } else if (availPipes.length > 0) {
-            // 🐞 修正: 練習モードでも roadCooldown <= 0 を条件に追加
             if (practiceSettings.road && roadCooldown <= 0 && !roadActive && Math.random() < 0.2 && noSpawnTimer <= 0 && spawnTimer <= 0) {
                 roadActive = true;
                 roadRemaining = ROAD_COUNT; 
@@ -1078,14 +1208,13 @@
                 roadSpawnTimer = ROAD_INTERVAL;
             } else if (!roadActive) {
                 spawnTimer -= dt;
-                if (spawnTimer <= 0) {
+                if (spawnTimer <= 0 && noSpawnTimer <= 0) {
                     spawnPracticePipe(availPipes);
                     spawnTimer = PIPE_INTERVAL;
                 }
             }
         }
     } else {
-        // 通常の土管生成ロジック
         spawnTimer -= dt;
         if (spawnTimer <= 0 && noSpawnTimer <= 0 && !roadActive) {
             if (cfg.road && roadCooldown <= 0 && gravityDir === 1 && !gravityWarn) {
@@ -1123,17 +1252,21 @@
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
       if (p.isShrink) {
-        const t = Math.max(0, Math.min(1, (W - p.x) / (W - W * 0.3)));
+        const t = Math.max(0, Math.min(1, isReverse ? (p.x / (W * 0.7)) : ((W - p.x) / (W * 0.7))));
         p.gap = p.shrinkStart + (p.gapFinal - p.shrinkStart) * t;
       }
       if (p.isSlideX) {
-        p.baseX -= speed * dt;
+        p.baseX += isReverse ? (speed * dt) : -(speed * dt);
         p.x = p.baseX + Math.sin(elapsed * 3.5 + p.slideXPhase) * 60; 
       } else {
-        p.x -= speed * dt;
+        p.x += isReverse ? (speed * dt) : -(speed * dt);
       }
 
-      if (!p.passed && p.x + PIPE_WIDTH < bird.x - bird.r) {
+      const passedCondition = isReverse 
+          ? (p.x > bird.x + bird.r) 
+          : (p.x + PIPE_WIDTH < bird.x - bird.r);
+
+      if (!p.passed && passedCondition) {
         p.passed = true;
         score++;
         scoreEl.textContent = String(score);
@@ -1160,65 +1293,84 @@
         scoreEl.classList.remove('pop', 'pop-big');
         void scoreEl.offsetWidth;
         scoreEl.classList.add(milestone ? 'pop-big' : 'pop');
-      }
-    }
-    pipes = pipes.filter(p => p.x > -PIPE_WIDTH);
 
-    const groundY = H - GROUND_H;
-    if (gravityDir === 1) {
-      if (bird.y + bird.r > groundY) { bird.y = groundY - bird.r; endGame(); return; }
-      if (bird.y - bird.r < 0) { bird.y = bird.r; bird.vy = 0; }
-    } else {
-      if (bird.y - bird.r < 0) { bird.y = bird.r; endGame(); return; }
-      if (bird.y + bird.r > groundY) { bird.y = groundY - bird.r; bird.vy = 0; }
-    }
-
-    for (const p of pipes) {
-      const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_WIDTH;
-      if (inX) {
-        let topH = p.gapY - p.gap / 2;
-        let botY = p.gapY + p.gap / 2;
-        
-        if (p.isAmbush || (p.isRoad && !p.isRoadStart)) {
-          const e = ambushGrow(p);
-          topH = (p.gapY - p.gap / 2) * e;
-          botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
+        if (cfg.actionMode && actionPhase === 5 && Math.random() < 0.25 && reverseTransitionTimer <= 0) {
+            reverseTransitionTimer = 1.5; 
+            noSpawnTimer = 3.0; 
+            spawnFloater(W/2, H/3, '⚠ 空間異常', '#ff4d6d', 1.6);
+            playGravityWarn();
         }
-        if (bird.y - bird.r < topH || bird.y + bird.r > botY) { endGame(); return; }
       }
+    }
+    
+    pipes = pipes.filter(p => isReverse ? (p.x < W) : (p.x > -PIPE_WIDTH));
+
+    if (actionPhase === 0 || actionPhase === 5) {
+        const groundY = H - GROUND_H;
+        if (gravityDir === 1) {
+          if (bird.y + bird.r > groundY) { bird.y = groundY - bird.r; endGame(); return; }
+          if (bird.y - bird.r < 0) { bird.y = bird.r; bird.vy = 0; }
+        } else {
+          if (bird.y - bird.r < 0) { bird.y = bird.r; endGame(); return; }
+          if (bird.y + bird.r > groundY) { bird.y = groundY - bird.r; bird.vy = 0; }
+        }
+
+        for (const p of pipes) {
+          const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_WIDTH;
+          if (inX) {
+            let topH = p.gapY - p.gap / 2;
+            let botY = p.gapY + p.gap / 2;
+            
+            if (p.isAmbush || (p.isRoad && !p.isRoadStart)) {
+              const e = ambushGrow(p);
+              topH = (p.gapY - p.gap / 2) * e;
+              botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
+            }
+            if (bird.y - bird.r < topH || bird.y + bird.r > botY) { endGame(); return; }
+          }
+        }
     }
   }
 
   function drawBackground() {
-    const tier = Math.min(6, Math.floor(score / 5));
-    const speedMul = 1 + tier * 0.7;
-    const ampMul = 1 + tier * 0.9;
+    let topColor, botColor;
     
-    const tierRot = Math.floor(score / 7);
-    const baseHue = (gravityDir === -1 ? 300 : 190) + tierRot * 45; 
-    
-    // 🐞 修正: Hue がマイナスになるのを防ぎ、ブラウザ間の描画バグを防止
-    let hue = (baseHue + Math.sin(bgTime * 0.12 * speedMul) * 18 * ampMul) % 360;
-    if (hue < 0) hue += 360;
+    if (isUnderground) {
+        topColor = '#3e2723';
+        botColor = '#5d4037';
+    } else {
+        const tier = Math.min(6, Math.floor(score / 5));
+        const speedMul = 1 + tier * 0.7;
+        const ampMul = 1 + tier * 0.9;
+        
+        const tierRot = Math.floor(score / 7);
+        const baseHue = (gravityDir === -1 ? 300 : 190) + tierRot * 45; 
+        
+        let hue = (baseHue + Math.sin(bgTime * 0.12 * speedMul) * 18 * ampMul) % 360;
+        if (hue < 0) hue += 360;
 
-    const sat = 62 + tier * 4;
-    const topColor = `hsl(${hue}, ${sat}%, 68%)`;
-    const botColor = `hsl(${hue + 20}, ${sat + 8}%, 84%)`;
+        const sat = 62 + tier * 4;
+        topColor = `hsl(${hue}, ${sat}%, 68%)`;
+        botColor = `hsl(${hue + 20}, ${sat + 8}%, 84%)`;
+    }
+
     const grd = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
     grd.addColorStop(0, topColor);
     grd.addColorStop(1, botColor);
     ctx.fillStyle = grd;
     ctx.fillRect(0, 0, W, H - GROUND_H);
 
-    for (const c of clouds) {
-      ctx.globalAlpha = 0.55;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y, c.r, c.r * 0.6, 0, 0, Math.PI * 2);
-      ctx.ellipse(c.x + c.r * 0.6, c.y + c.r * 0.1, c.r * 0.7, c.r * 0.5, 0, 0, Math.PI * 2);
-      ctx.fill();
+    if (!isUnderground) {
+        for (const c of clouds) {
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.ellipse(c.x, c.y, c.r, c.r * 0.6, 0, 0, Math.PI * 2);
+          ctx.ellipse(c.x + c.r * 0.6, c.y + c.r * 0.1, c.r * 0.7, c.r * 0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
   }
 
   function drawStarPath(cx, cy, outerR, innerR) {
@@ -1234,6 +1386,42 @@
       rot += step;
     }
     ctx.closePath();
+  }
+
+  // --- ★ BUG FIX: 鳥の奥に描画される背景用 ---
+  function drawTransitionBg() {
+      if (actionPhase >= 1 && actionPhase <= 3) {
+          ctx.fillStyle = '#4e342e'; 
+          ctx.fillRect(transitionWallX, 0, W, H - GROUND_H);
+          ctx.strokeStyle = '#3e2723';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(transitionWallX, 0, W, H - GROUND_H);
+          
+          ctx.fillStyle = '#2e7d32'; 
+          ctx.fillRect(transitionWallX - PIPE_WIDTH, transitionPipeY - 40, PIPE_WIDTH, 80);
+      }
+      if (actionPhase === 4) {
+          ctx.fillStyle = '#2e7d32';
+          ctx.fillRect(transitionWallX - PIPE_WIDTH, transitionPipeY - 40, PIPE_WIDTH, 80);
+      }
+  }
+
+  // --- ★ BUG FIX: 鳥の手前に描画される前景用 (土管に吸い込まれる奥行きを表現) ---
+  function drawTransitionFg() {
+      if (actionPhase >= 1 && actionPhase <= 3) {
+          ctx.fillStyle = '#66bb6a'; 
+          ctx.fillRect(transitionWallX - PIPE_WIDTH - 10, transitionPipeY - 45, 20, 90);
+          ctx.strokeStyle = '#2e7d32';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(transitionWallX - PIPE_WIDTH - 10, transitionPipeY - 45, 20, 90);
+      }
+      if (actionPhase === 4) {
+          ctx.fillStyle = '#66bb6a'; 
+          ctx.fillRect(transitionWallX - PIPE_WIDTH - 10, transitionPipeY - 45, 20, 90);
+          ctx.strokeStyle = '#2e7d32';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(transitionWallX - PIPE_WIDTH - 10, transitionPipeY - 45, 20, 90);
+      }
   }
 
   function drawPipes() {
@@ -1304,11 +1492,11 @@
 
   function drawGround() {
     const groundY = H - GROUND_H;
-    ctx.fillStyle = '#ded895';
+    ctx.fillStyle = isUnderground ? '#4e342e' : '#ded895';
     ctx.fillRect(0, groundY, W, GROUND_H);
-    ctx.fillStyle = '#c9b96a';
-    for (let x = -groundOffset; x < W; x += 40) { ctx.fillRect(x, groundY, 20, 10); }
-    ctx.fillStyle = '#8d6e3a';
+    ctx.fillStyle = isUnderground ? '#3e2723' : '#c9b96a';
+    for (let x = -groundOffset - 40; x < W; x += 40) { ctx.fillRect(x, groundY, 20, 10); }
+    ctx.fillStyle = isUnderground ? '#21110b' : '#8d6e3a';
     ctx.fillRect(0, groundY, W, 4);
   }
 
@@ -1356,6 +1544,7 @@
   }
 
   function drawTrail() {
+    if (birdScale < 0.5) return;
     const curChar = getCurrentChar();
     ctx.globalCompositeOperation = 'lighter';
     const n = trail.length;
@@ -1373,6 +1562,7 @@
   }
 
   function drawBirdGlow() {
+    if (birdScale < 0.5) return;
     const pulse = 0.5 + Math.sin(bgTime * 6) * 0.5;
     const tier = Math.min(4, Math.floor(score / 5));
     if (tier <= 0) return;
@@ -1417,11 +1607,12 @@
   }
 
   function drawBird() {
+    if (birdScale <= 0) return;
     const curChar = getCurrentChar();
     ctx.save();
     ctx.translate(bird.x, bird.y);
     ctx.rotate(bird.rot * gravityDir);
-    ctx.scale(1 / Math.sqrt(squash), (Math.sqrt(squash)) * gravityDir);
+    ctx.scale((1 / Math.sqrt(squash)) * birdScale, (Math.sqrt(squash)) * gravityDir * birdScale);
     paintBird(curChar, bird.r);
     ctx.restore();
   }
@@ -1447,11 +1638,25 @@
     ctx.save();
     if (shakeTime > 0) ctx.translate((Math.random() * 2 - 1) * shakeMag, (Math.random() * 2 - 1) * shakeMag);
     if (punch > 0.001) { ctx.translate(W / 2, H / 2); ctx.scale(1 + punch, 1 + punch); ctx.translate(-W / 2, -H / 2); }
-    drawBackground(); drawPipes(); drawGround(); drawShockwaves(); drawParticles(); drawTrail(); drawBirdGlow(); drawBird(); drawFloaters();
+    drawBackground(); 
+    drawPipes(); 
+    drawTransitionBg(); // ★ 鳥の奥に描画
+    drawGround(); 
+    drawShockwaves(); 
+    drawParticles(); 
+    drawTrail(); 
+    drawBirdGlow(); 
+    drawBird(); 
+    drawTransitionFg(); // ★ 鳥の手前に描画 (吸い込まれ感)
+    drawFloaters();
     ctx.restore();
     if (flashTimer > 0) {
       ctx.fillStyle = `rgba(${flashColor},${(flashTimer / flashMaxTimer) * 0.55})`;
       ctx.fillRect(0, 0, W, H); flashTimer -= 1 / 60;
+    }
+    if (fadeAlpha > 0) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${fadeAlpha})`;
+      ctx.fillRect(0, 0, W, H);
     }
   }
 
@@ -1485,8 +1690,6 @@
     if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); flap(); }
   });
   
-  // 🐞 修正: 「もう一度」ボタンを押した時に「強制的に通常モードに戻る」バグを削除
-  // （isPracticeMode = false の処理は 難易度変更ボタン の方に移動させました）
   startBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     flap();
