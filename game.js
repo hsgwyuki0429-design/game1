@@ -1,5 +1,5 @@
 // ==========================================
-// Flappy Byte 本体 (最高権力者デバッグ・10点以内地下確定版)
+// Flappy Byte 本体 (最高権力者デバッグ・完全版)
 // ==========================================
 (() => {
   const canvas = document.getElementById('game');
@@ -839,7 +839,7 @@
       return;
     }
     if (state === 'playing') {
-      // ★ 遷移中（フェーズ1〜4）は操作不能にする
+      // 遷移中（フェーズ1〜4）は操作不能にする
       if (actionPhase >= 1 && actionPhase <= 4) return;
       
       if (controlChaosMode) {
@@ -1051,28 +1051,9 @@
 
     bird.x += (birdTargetX - bird.x) * dt * 5;
 
-    // --- ★ BUG FIX: 壁と土管の進行 (止まるバグ修正) ---
+    // --- ★ BUG FIX: 壁の進行 ---
     if (actionPhase >= 1 && actionPhase <= 4) {
         transitionWallX -= speed * dt;
-    }
-
-    // --- ★ UPDATE: 土管を10個通る間に必ず壁が出現するように変更 ---
-    if (!isPracticeMode && cfg.actionMode && !actionEventDone && actionPhase === 0 && !roadActive && spawnTimer <= 0) {
-       let triggerWall = false;
-       if (score >= 10) {
-           triggerWall = true; // スコア10に達したら強制出現
-       } else if (score >= 2 && Math.random() < 0.15) {
-           triggerWall = true; // スコア2〜9の間は確率(15%)で出現
-       }
-
-       if (triggerWall) {
-          actionPhase = 1;
-          transitionWallX = W + 50;
-          transitionPipeY = H / 2;
-          noSpawnTimer = 9999; 
-          pipes = []; 
-          spawnFloater(W/2, H/3, '⚠ 地下へ...', '#ba68c8', 1.5);
-       }
     }
 
     // フェーズ1: 壁接近 (自動演出) 
@@ -1221,8 +1202,23 @@
         }
     } else {
         spawnTimer -= dt;
+        // --- ★ BUG FIX: タイマーが0以下になった瞬間に壁出現の割り込み判定を行う ---
         if (spawnTimer <= 0 && noSpawnTimer <= 0 && !roadActive) {
-            if (cfg.road && roadCooldown <= 0 && gravityDir === 1 && !gravityWarn) {
+            let triggerWall = false;
+            if (cfg.actionMode && actionPhase === 0 && !actionEventDone) {
+                if (score >= 10) triggerWall = true;
+                else if (score >= 2 && Math.random() < 0.15) triggerWall = true;
+            }
+
+            if (triggerWall) {
+                actionPhase = 1;
+                transitionWallX = W + 50;
+                transitionPipeY = H / 2;
+                noSpawnTimer = 9999; 
+                pipes = []; 
+                spawnFloater(W/2, H/3, '⚠ 地下へ...', '#ba68c8', 1.5);
+                spawnTimer = PIPE_INTERVAL; // リセットしておく
+            } else if (cfg.road && roadCooldown <= 0 && gravityDir === 1 && !gravityWarn) {
                 roadActive = true;
                 roadRemaining = ROAD_COUNT;
                 roadHue = Math.random() * 360; 
