@@ -1,11 +1,23 @@
-// ==========================================================================
-// ランキングのバックエンド (期間別・日時表示対応版 v3)
+// ランキングのバックエンド
+//   - firebase-config.js が正しく設定されていれば「世界共通ランキング」(global)
+//   - 未設定 / 読み込み失敗時は「この端末だけのローカル保存」(local) に自動フォールバック
+//
+// game.js からは window.LB を通して以下の形で利用する:
+//   window.LB.mode              'global' | 'local'
+//   window.LB.getUid()          自分の識別子（自分の記録をハイライトする用）
+//   await window.LB.save(name, score, diff)
+//   await window.LB.top(diff)   → [{ name, score, difficulty, timestamp, uid }, ...] (score降順)
+//
+// レベル（難易度 diff: normal / hard / insane / gravity）ごとに別ランキングとして扱う。
+//
+// 記録は「1プレイヤー×1難易度につき1件」だけ保持し、より高いスコアを出したときのみ
+// 上書き更新する（同じ人が同じレベルに何行も並ばない）。
 // ==========================================================================
 
-const LOCAL_KEY = 'flappy-byte-local-history-v3';
+const LOCAL_KEY = 'flappy-byte-local-leaderboard';
 const UID_KEY   = 'flappy-byte-uid';
-const MAX_KEEP  = 3000; // ローカル保存で保持する最大履歴件数
-const TOP_N     = 50;   // 表示する上位件数
+const MAX_KEEP  = 200; // ローカル保存で保持する最大件数
+const TOP_N     = 50;  // 表示する上位件数
 
 function ensureUid() {
   let u = null;
@@ -25,26 +37,6 @@ function writeLocal(list) {
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify(list)); } catch (e) {}
 }
 
-// 期間キーの計算（今日、今週、今年）
-function getPeriodKeys() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  
-  // 今年の第何週か（日曜日始まり）
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const pastDaysOfYear = (now.getTime() - startOfYear.getTime()) / 86400000;
-  const weekNum = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
-
-  return {
-    daily: `${yyyy}${mm}${dd}`,
-    weekly: `${yyyy}W${String(weekNum).padStart(2, '0')}`,
-    yearly: `${yyyy}`,
-    all: 'all'
-  };
-}
-
 // --- ローカル実装（既定 / フォールバック） ------------------------------------
 const localBackend = {
   mode: 'local',
@@ -60,32 +52,20 @@ const localBackend = {
       uid,
     };
     const list = readLocal();
-    list.push(entry);
-    
-    // データが膨大になるのを防ぐため、古い履歴から削除
-    if (list.length > MAX_KEEP) list.splice(0, list.length - MAX_KEEP);
-    writeLocal(list);
-  },
-  async top(diff, period = 'all') {
-    const now = new Date();
-    let startTime = 0;
-    
-    // 期間によるフィルタリング基準時刻
-    if (period === 'daily') {
-      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    } else if (period === 'weekly') {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      d.setDate(d.getDate() - d.getDay()); // 直近の日曜日まで戻る
-      startTime = d.getTime();
-    } else if (period === 'yearly') {
-      startTime = new Date(now.getFullYear(), 0, 1).getTime();
+    const idx = list.findIndex(e => e.uid === uid && e.difficulty === diff);
+    if (idx >= 0) {
+      if (entry.score > (Number(list[idx].score) || 0)) list[idx] = entry;
+    } else {
+      list.push(entry);
     }
-
+    list.sort((a, b) => b.score - a.score);
+    writeLocal(list.slice(0, MAX_KEEP));
+  },
+  async top(diff) {
+    // 同一プレイヤー(uid)は最高記録の1件だけに絞る（過去に重複保存されたデータも吸収）
     const best = new Map();
     for (const e of readLocal()) {
       if (e.difficulty !== diff) continue;
-      if (e.timestamp < startTime) continue;
-      
       const key = e.uid || ('name:' + e.name);
       const cur = best.get(key);
       if (!cur || (Number(e.score) || 0) > (Number(cur.score) || 0)) best.set(key, e);
@@ -96,6 +76,7 @@ const localBackend = {
   },
 };
 
+// まずローカル実装を即座に有効化（Firebase の初期化を待たずにゲームは常に動く）
 window.LB = localBackend;
 
 // --- 世界共通（Firebase / Firestore）へのアップグレードを試みる --------------------
@@ -119,7 +100,6 @@ if (isConfigured(cfg)) {
       ]);
       const { initializeApp } = appMod;
       const { getAuth, signInAnonymously, onAuthStateChanged } = authMod;
-      // 修正: query, orderBy, limit を追加インポート
       const { getFirestore, collection, doc, getDoc, setDoc, getDocs, query, orderBy, limit } = fsMod;
 
       const app = initializeApp(cfg);
@@ -136,61 +116,51 @@ if (isConfigured(cfg)) {
       await signInAnonymously(auth);
       await authReady;
 
-      const cache = new Map(); 
+      // 難易度ごとに別コレクション（leaderboard-normal-v2 など）に分け、
+      // ドキュメントID = uid で「1人1難易度につき1件」だけ保持する。
+      // 取得はスコア降順 + limit(TOP_N) で上位だけ読む
+      // （単一フィールドの自動インデックスで動くため複合インデックス不要）。
+      //
+      // LB_VERSION を上げると、削除権限なしでも「世界ランキングの一斉リセット」が
+      // できる（旧コレクションを読み書きしなくなり、新しい空のコレクションから始まる）。
+      const LB_VERSION = 'v2';
+      const colRef = (diff) => collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard-' + diff + '-' + LB_VERSION);
+
+      // 難易度ごとの取得結果キャッシュ（タブ切り替えのたびに再取得しない）
+      const cache = new Map(); // diff -> { t: 取得時刻, data: [...] }
       const CACHE_MS = 30 * 1000;
 
       window.LB.mode = 'global';
       window.LB.getUid = () => uid;
-      
       window.LB.save = async (name, score, diff) => {
         const val = Number(score) || 0;
-        const periods = getPeriodKeys();
-        
-        const promises = Object.entries(periods).map(async ([periodType, periodKey]) => {
-          const colName = `leaderboard-${diff}-${periodType}-${periodKey}-v3`;
-          const ref = doc(collection(db, 'artifacts', appId, 'public', 'data', colName), uid);
-          
-          const prev = await getDoc(ref);
-          if (prev.exists() && (Number(prev.data().score) || 0) >= val) return; 
-          
-          await setDoc(ref, {
-            name: (name || '名無し').slice(0, 15),
-            score: val,
-            difficulty: diff,
-            timestamp: Date.now(),
-            uid,
-          });
+        const ref = doc(colRef(diff), uid);
+        const prev = await getDoc(ref);
+        if (prev.exists() && (Number(prev.data().score) || 0) >= val) return; // 記録更新時のみ書き込む
+        await setDoc(ref, {
+          name: (name || '名無し').slice(0, 15),
+          score: val,
+          difficulty: diff,
+          timestamp: Date.now(),
+          uid,
         });
-        
-        await Promise.all(promises);
-        cache.clear(); 
+        cache.delete(diff); // 次回表示で最新を取得させる
       };
-      
-      window.LB.top = async (diff, period = 'all') => {
-        const periodKey = getPeriodKeys()[period] || 'all';
-        const cacheKey = `${diff}-${period}-${periodKey}`;
-        const hit = cache.get(cacheKey);
-        
+      window.LB.top = async (diff) => {
+        const hit = cache.get(diff);
         if (hit && Date.now() - hit.t < CACHE_MS) return hit.data;
-        
-        const colName = `leaderboard-${diff}-${period}-${periodKey}-v3`;
-        const colRef = collection(db, 'artifacts', appId, 'public', 'data', colName);
-        
-        // 修正: パフォーマンスとコストのためにFirestore側でソートと制限を行う
-        const q = query(colRef, orderBy('score', 'desc'), limit(TOP_N));
-        const snap = await getDocs(q);
-        
+        const snap = await getDocs(query(colRef(diff), orderBy('score', 'desc'), limit(TOP_N)));
         const out = [];
         snap.forEach(d => out.push(d.data()));
-        
-        cache.set(cacheKey, { t: Date.now(), data: out });
+        cache.set(diff, { t: Date.now(), data: out });
         return out;
       };
 
       console.info('[leaderboard] 世界共通ランキング(global)モードで動作中');
       return 'global';
     } catch (e) {
-      console.warn('[leaderboard] Firebase 初期化に失敗:', e);
+      console.warn('[leaderboard] Firebase 初期化に失敗したためローカル保存に切り替えます:', e);
+      // localBackend のまま（window.LB は既にローカル実装）
       window.LB.mode = 'local';
       return 'local';
     }
