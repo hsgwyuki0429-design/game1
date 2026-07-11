@@ -1,6 +1,6 @@
 // Flappy Byte Service Worker
 // ネットワーク優先 (更新が即反映)、オフライン時はキャッシュにフォールバック
-const CACHE = 'flappy-byte-v1.2';
+const CACHE = 'flappy-byte-v1.3';
 const ASSETS = [
   './',
   './index.html',

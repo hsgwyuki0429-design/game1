@@ -1033,10 +1033,15 @@
     }
     const tIn = Math.max(0, distIn / speed);
     const tOut = Math.max(0, distOut / speed);
-    const tB = Math.min(tOut, tIn + 0.18);
+    // 入口・中間・出口の3点で通過中のすき間の動きを見込む
     const a = aiGapAt(p, tIn);
-    const b = aiGapAt(p, tB);
-    return { top: Math.max(a.top, b.top), bot: Math.min(a.bot, b.bot) };
+    const b = aiGapAt(p, (tIn + tOut) / 2);
+    const c = aiGapAt(p, tOut);
+    return {
+      top: Math.max(a.top, b.top, c.top),
+      bot: Math.min(a.bot, b.bot, c.bot),
+      tIn, tOut,
+    };
   }
 
   function doAutoPilot(dt) {
@@ -1046,31 +1051,41 @@
       return;
     }
     if (state !== 'playing' || autoCooldown > 0) return;
-    
+
     if (actionPhase >= 1 && actionPhase <= 4) return;
-    
+
     const doFlap = () => { flap(); autoCooldown = 0.06; };
 
-    let first = null, second = null;
     const activePipes = pipes.filter(p => isReverse ? (p.x < bird.x) : (p.x + PIPE_WIDTH + bird.r > bird.x));
     activePipes.sort((a, b) => isReverse ? (b.x - a.x) : (a.x - b.x));
-    if (activePipes.length > 0) first = activePipes[0];
-    if (activePipes.length > 1) second = activePipes[1];
 
     const MARGIN = 5;
     let corTop = bird.r + 6;
     let corBot = H - GROUND_H - bird.r - 6;
-    if (first) {
-      const c = aiCorridor(first);
-      corTop = Math.max(corTop, c.top + bird.r + MARGIN);
-      corBot = Math.min(corBot, c.bot - bird.r - MARGIN);
-      if (second && Math.abs(second.x - first.x) < 210) {
-        const c2 = aiCorridor(second);
-        corTop = Math.max(corTop, c2.top + bird.r + MARGIN);
-        corBot = Math.min(corBot, c2.bot - bird.r - MARGIN);
+    let target = null;
+
+    if (activePipes.length > 0) {
+      const cors = activePipes.slice(0, 4).map(aiCorridor);
+      // 直後に続く土管 (ロード等) は厳密な制約としてまとめて回避
+      const chainEnd = cors[0].tOut + 0.4;
+      for (let i = 0; i < cors.length; i++) {
+        const c = cors[i];
+        if (i > 0 && c.tIn > chainEnd) {
+          // 少し先の土管: 制約にはせず、早めに高さを合わせるターゲットにする
+          if (c.tIn < 1.6) target = (c.top + c.bot) / 2;
+          break;
+        }
+        corTop = Math.max(corTop, c.top + bird.r + MARGIN);
+        corBot = Math.min(corBot, c.bot - bird.r - MARGIN);
       }
-      if (corTop > corBot) { const mid = (corTop + corBot) / 2; corTop = mid; corBot = mid; }
+      if (corTop > corBot) { const m = (corTop + corBot) / 2; corTop = m; corBot = m; }
+    } else {
+      // 土管が見えないときは中央高度で待機して次にどちらへも動けるように
+      corTop = Math.max(corTop, (H - GROUND_H) * 0.32);
+      corBot = Math.min(corBot, (H - GROUND_H) * 0.62);
     }
+    if (target === null) target = (corTop + corBot) / 2;
+    target = Math.max(corTop, Math.min(corBot, target));
 
     const flapRise = (cfg.flap * cfg.flap) / (2 * cfg.gravity);
     const predict = (t) => bird.y + bird.vy * t + 0.5 * cfg.gravity * gravityDir * t * t;
@@ -1085,11 +1100,18 @@
     const soon = predict(0.05);
     const urgent = predict(0.016);
     if (gravityDir === 1) {
+      if (urgent > corBot) { doFlap(); return; }
       const pierce = bird.y - flapRise < corTop - 6;
-      if (soon > corBot && (!pierce || urgent > corBot)) doFlap();
+      // 余裕があればターゲット高さ付近を巡航、狭いときは従来通り下限で粘る
+      const cruiseBot = Math.min(corBot, target + Math.max(10, (corBot - target) * 0.45));
+      if (soon > cruiseBot && !pierce) doFlap();
+      else if (soon > corBot && (!pierce || urgent > corBot)) doFlap();
     } else {
+      if (urgent < corTop) { doFlap(); return; }
       const pierce = bird.y + flapRise > corBot + 6;
-      if (soon < corTop && (!pierce || urgent < corTop)) doFlap();
+      const cruiseTop = Math.max(corTop, target - Math.max(10, (target - corTop) * 0.45));
+      if (soon < cruiseTop && !pierce) doFlap();
+      else if (soon < corTop && (!pierce || urgent < corTop)) doFlap();
     }
   }
 
