@@ -520,7 +520,7 @@
   const GRAVITY_WARN_LEAD = 2.0;
   const GRAVITY_CLEAR_AFTER = 1.0;
   const FLIP_TIME_SCALE = 0.75;
-  const ROAD_GAP = 175;
+  const ROAD_GAP = 200;
   const ROAD_INTERVAL = 0.3;
   const ROAD_COUNT = 16;
   const ROAD_PHASE_STEP = 0.32;
@@ -787,7 +787,7 @@
     shockwaves = shockwaves.filter(s => s.life > 0);
   }
 
-  function currentGap() { return Math.max(cfg.gapMin, cfg.gapBase - score * 1.5); }
+  function currentGap() { return cfg.gapBase; }
 
   function spawnPracticePipe(availPipes) {
       const type = availPipes[Math.floor(Math.random() * availPipes.length)];
