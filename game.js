@@ -1643,31 +1643,67 @@
     }
   }
 
-  // 元のフラットな描画 (新デザインの模様のみ上に重ねる)
+  function roundRectPath(g, x, y, w, h, r) {
+    const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+    g.beginPath();
+    g.moveTo(x + rr, y);
+    g.lineTo(x + w - rr, y);
+    g.arcTo(x + w, y, x + w, y + rr, rr);
+    g.lineTo(x + w, y + h - rr);
+    g.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+    g.lineTo(x + rr, y + h);
+    g.arcTo(x, y + h, x, y + h - rr, rr);
+    g.lineTo(x, y + rr);
+    g.arcTo(x, y, x, y + rr, rr);
+    g.closePath();
+  }
+
+  // 丸角 + 左ハイライト/右シェードの立体感 (Block Blast 風)
   function paintPipeSegment(g, x, y, w, h, fill, stroke, deco, anchorBottom) {
     if (h <= 0.5) return;
+    const r = Math.min(6, h / 2);
+    roundRectPath(g, x, y, w, h, r);
     g.fillStyle = fill;
-    g.fillRect(x, y, w, h);
+    g.fill();
     if (deco) {
       g.save();
-      g.beginPath();
-      g.rect(x, y, w, h);
+      roundRectPath(g, x, y, w, h, r);
       g.clip();
       drawPipeDeco(g, x, y, w, h, deco, anchorBottom);
       g.restore();
     }
+    roundRectPath(g, x, y, w, h, r);
+    const grad = g.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.32)');
+    grad.addColorStop(0.22, 'rgba(255,255,255,0.10)');
+    grad.addColorStop(0.55, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.85, 'rgba(0,0,0,0.10)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.24)');
+    g.fillStyle = grad;
+    g.fill();
     g.strokeStyle = stroke;
     g.lineWidth = 3;
-    g.strokeRect(x, y, w, h);
+    roundRectPath(g, x, y, w, h, r);
+    g.stroke();
   }
 
   function paintPipeCap(g, x, y, w, h, fill, stroke) {
     if (h <= 0.5) return;
+    roundRectPath(g, x, y, w, h, 5);
     g.fillStyle = fill;
-    g.fillRect(x, y, w, h);
+    g.fill();
+    const grad = g.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.38)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.22)');
+    g.fillStyle = grad;
+    g.fill();
     g.strokeStyle = stroke;
     g.lineWidth = 3;
-    g.strokeRect(x, y, w, h);
+    roundRectPath(g, x, y, w, h, 5);
+    g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.fillRect(x + 4, y + 2.5, w - 8, 2.5);
   }
 
   function pipeColors(p, curSkin) {
@@ -1710,8 +1746,8 @@
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = (1 - t) * 0.6;
         ctx.fillStyle = '#ffffff';
-        if (topHeight > 0.5) ctx.fillRect(renderX - 4 - grow, 0, PIPE_WIDTH + 8 + grow * 2, topHeight + grow);
-        if (bottomHeight > 0.5) ctx.fillRect(renderX - 4 - grow, botY - grow, PIPE_WIDTH + 8 + grow * 2, bottomHeight + grow);
+        if (topHeight > 0.5) { roundRectPath(ctx, renderX - 4 - grow, 0, PIPE_WIDTH + 8 + grow * 2, topHeight + grow, 6); ctx.fill(); }
+        if (bottomHeight > 0.5) { roundRectPath(ctx, renderX - 4 - grow, botY - grow, PIPE_WIDTH + 8 + grow * 2, bottomHeight + grow, 6); ctx.fill(); }
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;
       }
