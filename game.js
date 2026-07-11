@@ -1315,6 +1315,10 @@
       if (!p.passed && passedCondition) {
         p.passed = true;
         p.flash = 0.22;
+        // すき間の上下の縁からスパークが飛び散る (Block Blast のライン消去風)
+        const sparkX = p.x + PIPE_WIDTH / 2;
+        spawnBurst(sparkX, p.gapY - p.gap / 2, ['#fff', '#ffe9b3'], 5, { speed: 130, life: 0.35, size: 2.2, sparkRatio: 0.5, gravity: 300 });
+        spawnBurst(sparkX, p.gapY + p.gap / 2, ['#fff', '#ffe9b3'], 5, { speed: 130, life: 0.35, size: 2.2, sparkRatio: 0.5, gravity: 300 });
         score++;
         scoreEl.textContent = String(score);
         const milestone = score % 5 === 0;
@@ -1322,20 +1326,11 @@
         vibrate(milestone ? [15, 30, 15] : 15);
         triggerPunch(milestone ? 0.07 : 0.03);
 
-        // すき間の中央付近を通過すると COMBO (Block Blast 風の連鎖演出)
+        // すき間の中央付近を通過するとキラキラが少し増える (テキストなしの控えめな演出)
         if (Math.abs(bird.y - p.gapY) < p.gap * 0.22) {
           combo++;
-          if (combo >= 2) {
-            const comboColors = ['#4dd0e1', '#ffd166', '#ff8c42', '#ff4d6d', '#ba68c8'];
-            const cc = comboColors[Math.min(comboColors.length - 1, combo - 2)];
-            spawnFloater(bird.x, bird.y - 44, `${combo} COMBO!`, cc, 1.15 + Math.min(0.6, combo * 0.08));
-            triggerPunch(Math.min(0.1, 0.04 + combo * 0.01));
-            if (combo >= 4) triggerShake(3, 0.12);
-            spawnBurst(bird.x, bird.y, [cc, '#fff'], 8 + Math.min(12, combo * 2), { speed: 230, life: 0.45, size: 3, starRatio: 0.4, sparkRatio: 0.3 });
-            playCombo(combo);
-          } else {
-            spawnFloater(bird.x, bird.y - 40, 'NICE!', '#a5f3fc', 0.9);
-          }
+          spawnBurst(bird.x, bird.y, ['#fff', '#ffe9b3'], 6 + Math.min(8, combo * 2), { speed: 200, life: 0.4, size: 2.5, sparkRatio: 0.6 });
+          playCombo(combo);
         } else {
           combo = 0;
         }
@@ -1535,21 +1530,6 @@
       }
   }
 
-  function roundRectPath(g, x, y, w, h, r) {
-    const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-    g.beginPath();
-    g.moveTo(x + rr, y);
-    g.lineTo(x + w - rr, y);
-    g.arcTo(x + w, y, x + w, y + rr, rr);
-    g.lineTo(x + w, y + h - rr);
-    g.arcTo(x + w, y + h, x + w - rr, y + h, rr);
-    g.lineTo(x + rr, y + h);
-    g.arcTo(x, y + h, x, y + h - rr, rr);
-    g.lineTo(x, y + rr);
-    g.arcTo(x, y, x, y + rr, rr);
-    g.closePath();
-  }
-
   // 各デザインの模様。anchorBottom=true なら下端(=キャップ側)基準で並べる
   function drawPipeDeco(g, x, y, w, h, deco, anchorBottom) {
     const posAt = (off) => anchorBottom ? (y + h - off) : (y + off);
@@ -1663,52 +1643,31 @@
     }
   }
 
-  // Block Blast 風: 丸角 + 左ハイライト/右シェードの立体感
+  // 元のフラットな描画 (新デザインの模様のみ上に重ねる)
   function paintPipeSegment(g, x, y, w, h, fill, stroke, deco, anchorBottom) {
     if (h <= 0.5) return;
-    const r = Math.min(6, h / 2);
-    roundRectPath(g, x, y, w, h, r);
     g.fillStyle = fill;
-    g.fill();
+    g.fillRect(x, y, w, h);
     if (deco) {
       g.save();
-      roundRectPath(g, x, y, w, h, r);
+      g.beginPath();
+      g.rect(x, y, w, h);
       g.clip();
       drawPipeDeco(g, x, y, w, h, deco, anchorBottom);
       g.restore();
     }
-    roundRectPath(g, x, y, w, h, r);
-    const grad = g.createLinearGradient(x, 0, x + w, 0);
-    grad.addColorStop(0, 'rgba(255,255,255,0.32)');
-    grad.addColorStop(0.22, 'rgba(255,255,255,0.10)');
-    grad.addColorStop(0.55, 'rgba(255,255,255,0)');
-    grad.addColorStop(0.85, 'rgba(0,0,0,0.10)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.24)');
-    g.fillStyle = grad;
-    g.fill();
     g.strokeStyle = stroke;
     g.lineWidth = 3;
-    roundRectPath(g, x, y, w, h, r);
-    g.stroke();
+    g.strokeRect(x, y, w, h);
   }
 
   function paintPipeCap(g, x, y, w, h, fill, stroke) {
     if (h <= 0.5) return;
-    roundRectPath(g, x, y, w, h, 5);
     g.fillStyle = fill;
-    g.fill();
-    const grad = g.createLinearGradient(x, 0, x + w, 0);
-    grad.addColorStop(0, 'rgba(255,255,255,0.38)');
-    grad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.22)');
-    g.fillStyle = grad;
-    g.fill();
+    g.fillRect(x, y, w, h);
     g.strokeStyle = stroke;
     g.lineWidth = 3;
-    roundRectPath(g, x, y, w, h, 5);
-    g.stroke();
-    g.fillStyle = 'rgba(255,255,255,0.35)';
-    g.fillRect(x + 4, y + 2.5, w - 8, 2.5);
+    g.strokeRect(x, y, w, h);
   }
 
   function pipeColors(p, curSkin) {
@@ -1744,14 +1703,15 @@
       if (topHeight > 0.5) paintPipeCap(ctx, renderX - 4, topH - 20, PIPE_WIDTH + 8, 20, col.cap, col.stroke);
       if (bottomHeight > 0.5) paintPipeCap(ctx, renderX - 4, botY, PIPE_WIDTH + 8, 20, col.cap, col.stroke);
 
-      // 通過した瞬間の一瞬光るフラッシュ (Block Blast 風・約0.22秒)
+      // 通過した瞬間: 光る → わずかに膨らむ → パッと消える (Block Blast 風・約0.22秒)
       if (p.flash > 0) {
-        const a = p.flash / 0.22;
+        const t = 1 - p.flash / 0.22;
+        const grow = 5 * Math.sin(t * Math.PI);
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = a * 0.55;
+        ctx.globalAlpha = (1 - t) * 0.6;
         ctx.fillStyle = '#ffffff';
-        if (topHeight > 0.5) { roundRectPath(ctx, renderX - 4, 0, PIPE_WIDTH + 8, topHeight, 6); ctx.fill(); }
-        if (bottomHeight > 0.5) { roundRectPath(ctx, renderX - 4, botY, PIPE_WIDTH + 8, bottomHeight, 6); ctx.fill(); }
+        if (topHeight > 0.5) ctx.fillRect(renderX - 4 - grow, 0, PIPE_WIDTH + 8 + grow * 2, topHeight + grow);
+        if (bottomHeight > 0.5) ctx.fillRect(renderX - 4 - grow, botY - grow, PIPE_WIDTH + 8 + grow * 2, bottomHeight + grow);
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;
       }
