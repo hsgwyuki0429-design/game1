@@ -321,6 +321,14 @@
     sunset:  { name: 'サンセット', fill: '#ff7043', stroke: '#bf360c', cap: '#ffab91', mFill: '#ab47bc', mStroke: '#6a1b9a', mCap: '#ce93d8' },
     ocean:   { name: 'オーシャン', fill: '#26c6da', stroke: '#00838f', cap: '#80deea', mFill: '#5c6bc0', mStroke: '#283593', mCap: '#9fa8da' },
     forest:  { name: 'フォレスト', fill: '#2e7d32', stroke: '#1b5e20', cap: '#66bb6a', mFill: '#8d6e63', mStroke: '#4e342e', mCap: '#bcaaa4' },
+    brick:    { name: 'レンガ遺跡',       fill: '#b4633e', stroke: '#6d3520', cap: '#c9825a', mFill: '#7d8a97', mStroke: '#42505c', mCap: '#9aa8b5', deco: 'brick' },
+    cyber:    { name: 'サイバーパイプ',   fill: '#252c42', stroke: '#0d1117', cap: '#3a4664', mFill: '#3d2c52', mStroke: '#1a0f28', mCap: '#584174', deco: 'cyber' },
+    gold:     { name: '黄金の財宝',       fill: '#e0a428', stroke: '#8a5f10', cap: '#f0c860', mFill: '#c0c8d4', mStroke: '#6e7a88', mCap: '#e4eaf2', deco: 'gold' },
+    bamboo:   { name: '竹林',             fill: '#6aa84f', stroke: '#38571b', cap: '#93c47d', mFill: '#4f9aa8', mStroke: '#1b4e57', mCap: '#7dbcc4', deco: 'bamboo' },
+    crystal:  { name: 'クリスタル',       fill: '#cfe4f5', stroke: '#8aa8c9', cap: '#e8f4fc', mFill: '#e5cff5', mStroke: '#b18ac9', mCap: '#f4e8fc', deco: 'crystal' },
+    station:  { name: '宇宙ステーション', fill: '#8e97a4', stroke: '#4a525e', cap: '#b6bec9', mFill: '#97918e', mStroke: '#5e544a', mCap: '#c9c0b6', deco: 'station' },
+    candypop: { name: 'キャンディポップ', fill: '#fff5f6', stroke: '#c9184a', cap: '#ff8fab', mFill: '#f5fbff', mStroke: '#1863c9', mCap: '#8fb8ff', deco: 'candypop' },
+    dot:      { name: 'クラシックドット', fill: '#43a047', stroke: '#1b5e20', cap: '#76d275', mFill: '#4372a0', mStroke: '#1b3a5e', mCap: '#76a4d2', deco: 'dot' },
   };
 
   let character = localStorage.getItem('flappy-byte-character') || 'byte';
@@ -436,10 +444,12 @@
       const card = document.createElement('button');
       card.className = 'option-card' + (key === pipeSkinKey ? ' active' : '');
       card.dataset.pipe = key;
-      const sw = document.createElement('div');
+      const sw = document.createElement('canvas');
       sw.className = 'pipe-swatch';
-      sw.style.background = `linear-gradient(${s.fill} 0 70%, ${s.cap} 70% 100%)`;
-      sw.style.border = `2px solid ${s.stroke}`;
+      sw.width = 60; sw.height = 46;
+      const g = sw.getContext('2d');
+      paintPipeCap(g, 10, 1, 40, 13, s.cap, s.stroke);
+      paintPipeSegment(g, 14, 14, 32, 31, s.fill, s.stroke, s.deco || null, false);
       const name = document.createElement('span');
       name.className = 'option-name';
       name.textContent = s.name;
@@ -452,6 +462,7 @@
   function selectPipeSkin(key) {
     pipeSkinKey = key;
     localStorage.setItem('flappy-byte-pipeskin', key);
+    buildSkinCycle();
     Array.from(pipeGrid.children).forEach(card => card.classList.toggle('active', card.dataset.pipe === key));
     playScore(false);
   }
@@ -466,11 +477,21 @@
     return CHARACTERS[keys[(baseIdx + tier) % keys.length]];
   }
   
+  // 選択スキンを先頭に、残りをシャッフルしたローテーション順 (ゲーム開始ごとに変わる)
+  let skinCycle = [];
+  function buildSkinCycle() {
+    const rest = Object.keys(PIPE_SKINS).filter(k => k !== pipeSkinKey);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    skinCycle = [pipeSkinKey, ...rest];
+  }
+
   function getCurrentPipeSkin() {
-    const keys = Object.keys(PIPE_SKINS);
-    const baseIdx = Math.max(0, keys.indexOf(pipeSkinKey));
+    if (skinCycle.length === 0) buildSkinCycle();
     const tier = Math.floor(score / 7);
-    return PIPE_SKINS[keys[(baseIdx + tier) % keys.length]];
+    return PIPE_SKINS[skinCycle[tier % skinCycle.length]];
   }
 
   let state = 'ready';
@@ -588,6 +609,7 @@
 
     gravityBadge.classList.add('hidden');
     gravityBadge.classList.remove('warn', 'active');
+    buildSkinCycle();
     initClouds();
     scoreEl.textContent = '0';
     newBestLine.classList.add('hidden');
@@ -672,6 +694,11 @@
       tone({ freq: 2349, duration: 0.28, type: 'sine', volume: 0.06, delay: 0.11 });
     }
   }
+  function playCombo(n) {
+    const f = 700 + Math.min(6, n) * 80;
+    tone({ freq: f, duration: 0.09, type: 'triangle', volume: 0.12 });
+    tone({ freq: f * 1.5, duration: 0.12, type: 'sine', volume: 0.07, delay: 0.03 });
+  }
   function playHit() {
     tone({ freq: 300, glideTo: 90, duration: 0.34, type: 'sine', volume: 0.22, attack: 0.004 });
     tone({ freq: 150, glideTo: 60, duration: 0.4, type: 'triangle', volume: 0.1, attack: 0.006 });
@@ -694,15 +721,16 @@
   function vibrate(pattern) { if (navigator.vibrate) navigator.vibrate(pattern); }
 
   function spawnBurst(x, y, colors, count, opts = {}) {
-    const { speed = 220, life = 0.6, size = 3, starRatio = 0, gravity = 500 } = opts;
+    const { speed = 220, life = 0.6, size = 3, starRatio = 0, sparkRatio = 0, gravity = 500 } = opts;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const v = speed * (0.4 + Math.random() * 0.6);
+      const roll = Math.random();
       particles.push({
         x, y, vx: Math.cos(angle) * v, vy: Math.sin(angle) * v - 60,
         life, maxLife: life, size: size * (0.6 + Math.random() * 0.8),
         color: colors[Math.floor(Math.random() * colors.length)],
-        shape: Math.random() < starRatio ? 'star' : 'circle',
+        shape: roll < starRatio ? 'star' : (roll < starRatio + sparkRatio ? 'spark' : 'circle'),
         rot: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 8, gravity,
       });
     }
@@ -1265,6 +1293,7 @@
     }
 
     for (const p of pipes) {
+      if (p.flash > 0) p.flash -= dt;
       if (p.moving) {
         p.gapY = p.baseGapY + Math.sin(elapsed * p.moveSpeed + p.movePhase) * p.moveAmp;
       }
@@ -1285,12 +1314,31 @@
 
       if (!p.passed && passedCondition) {
         p.passed = true;
+        p.flash = 0.22;
         score++;
         scoreEl.textContent = String(score);
         const milestone = score % 5 === 0;
         playScore(milestone);
         vibrate(milestone ? [15, 30, 15] : 15);
         triggerPunch(milestone ? 0.07 : 0.03);
+
+        // すき間の中央付近を通過すると COMBO (Block Blast 風の連鎖演出)
+        if (Math.abs(bird.y - p.gapY) < p.gap * 0.22) {
+          combo++;
+          if (combo >= 2) {
+            const comboColors = ['#4dd0e1', '#ffd166', '#ff8c42', '#ff4d6d', '#ba68c8'];
+            const cc = comboColors[Math.min(comboColors.length - 1, combo - 2)];
+            spawnFloater(bird.x, bird.y - 44, `${combo} COMBO!`, cc, 1.15 + Math.min(0.6, combo * 0.08));
+            triggerPunch(Math.min(0.1, 0.04 + combo * 0.01));
+            if (combo >= 4) triggerShake(3, 0.12);
+            spawnBurst(bird.x, bird.y, [cc, '#fff'], 8 + Math.min(12, combo * 2), { speed: 230, life: 0.45, size: 3, starRatio: 0.4, sparkRatio: 0.3 });
+            playCombo(combo);
+          } else {
+            spawnFloater(bird.x, bird.y - 40, 'NICE!', '#a5f3fc', 0.9);
+          }
+        } else {
+          combo = 0;
+        }
 
         if (milestone) {
           triggerFlash('255,209,102', 0.16);
@@ -1305,7 +1353,7 @@
           bird.x, bird.y,
           milestone ? ['#ffd166', '#ff6b6b', '#4caf50', '#fff'] : ['#ffd166', '#fff8e1'],
           milestone ? 26 : 10,
-          { speed: milestone ? 280 : 180, life: milestone ? 0.9 : 0.5, size: milestone ? 4.5 : 3, starRatio: milestone ? 0.45 : 0 }
+          { speed: milestone ? 280 : 180, life: milestone ? 0.9 : 0.5, size: milestone ? 4.5 : 3, starRatio: milestone ? 0.45 : 0, sparkRatio: 0.35 }
         );
         scoreEl.classList.remove('pop', 'pop-big');
         void scoreEl.offsetWidth;
@@ -1427,8 +1475,7 @@
     }
   }
 
-  function drawStarPath(cx, cy, outerR, innerR) {
-    const spikes = 5;
+  function drawStarPath(cx, cy, outerR, innerR, spikes = 5) {
     let rot = -Math.PI / 2;
     const step = Math.PI / spikes;
     ctx.beginPath();
@@ -1488,68 +1535,225 @@
       }
   }
 
+  function roundRectPath(g, x, y, w, h, r) {
+    const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+    g.beginPath();
+    g.moveTo(x + rr, y);
+    g.lineTo(x + w - rr, y);
+    g.arcTo(x + w, y, x + w, y + rr, rr);
+    g.lineTo(x + w, y + h - rr);
+    g.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+    g.lineTo(x + rr, y + h);
+    g.arcTo(x, y + h, x, y + h - rr, rr);
+    g.lineTo(x, y + rr);
+    g.arcTo(x, y, x, y + rr, rr);
+    g.closePath();
+  }
+
+  // 各デザインの模様。anchorBottom=true なら下端(=キャップ側)基準で並べる
+  function drawPipeDeco(g, x, y, w, h, deco, anchorBottom) {
+    const posAt = (off) => anchorBottom ? (y + h - off) : (y + off);
+    switch (deco) {
+      case 'brick': {
+        g.strokeStyle = 'rgba(60, 25, 10, 0.45)';
+        g.lineWidth = 2;
+        const rowH = 16;
+        for (let k = 0, yy = posAt(10); yy > y - rowH && yy < y + h + rowH; k++, yy = posAt(10 + k * rowH)) {
+          g.beginPath(); g.moveTo(x, yy); g.lineTo(x + w, yy); g.stroke();
+          const off = (k % 2 === 0) ? w * 0.33 : w * 0.66;
+          g.beginPath(); g.moveTo(x + off, yy); g.lineTo(x + off, yy + (anchorBottom ? rowH : -rowH)); g.stroke();
+          if (k % 3 === 0) {
+            g.fillStyle = 'rgba(106, 168, 79, 0.75)';
+            g.beginPath(); g.ellipse(x + (k % 2 ? w - 8 : 8), yy - 4, 8, 5, 0, 0, Math.PI * 2); g.fill();
+          }
+        }
+        break;
+      }
+      case 'cyber': {
+        const neon = ['#00e5ff', '#ff2bd6', '#7c4dff'];
+        const step = 26;
+        for (let k = 0, yy = posAt(14); yy > y - step && yy < y + h + step; k++, yy = posAt(14 + k * step)) {
+          g.fillStyle = neon[k % neon.length];
+          g.globalAlpha = 0.9;
+          g.fillRect(x, yy - 3, w, 6);
+          g.globalAlpha = 0.35;
+          g.fillRect(x, yy - 6, w, 12);
+          g.globalAlpha = 1;
+        }
+        break;
+      }
+      case 'gold': {
+        const gems = ['#e53935', '#43a047', '#1e88e5'];
+        const step = 30;
+        for (let k = 0, yy = posAt(16); yy > y - step && yy < y + h + step; k++, yy = posAt(16 + k * step)) {
+          g.fillStyle = 'rgba(138, 95, 16, 0.4)';
+          g.fillRect(x, yy - 4, w, 8);
+          g.fillStyle = gems[k % gems.length];
+          g.beginPath(); g.arc(x + w / 2, yy, 4.5, 0, Math.PI * 2); g.fill();
+          g.fillStyle = 'rgba(255,255,255,0.85)';
+          g.beginPath(); g.arc(x + w / 2 - 1.5, yy - 1.5, 1.4, 0, Math.PI * 2); g.fill();
+        }
+        break;
+      }
+      case 'bamboo': {
+        const step = 32;
+        for (let k = 0, yy = posAt(18); yy > y - step && yy < y + h + step; k++, yy = posAt(18 + k * step)) {
+          g.fillStyle = 'rgba(35, 65, 15, 0.4)';
+          g.fillRect(x, yy - 2, w, 4);
+          g.fillStyle = 'rgba(255, 255, 230, 0.4)';
+          g.fillRect(x, yy + 2, w, 2);
+        }
+        break;
+      }
+      case 'crystal': {
+        g.strokeStyle = 'rgba(255,255,255,0.55)';
+        g.lineWidth = 2;
+        const step = 24;
+        for (let k = 0, yy = posAt(6); yy > y - step - h && yy < y + h + step; k++, yy = posAt(6 + k * step)) {
+          g.beginPath(); g.moveTo(x, yy); g.lineTo(x + w, yy + (anchorBottom ? -w * 0.6 : w * 0.6)); g.stroke();
+        }
+        g.strokeStyle = 'rgba(160, 120, 255, 0.3)';
+        for (let k = 0, yy = posAt(18); yy > y - step - h && yy < y + h + step; k++, yy = posAt(18 + k * step)) {
+          g.beginPath(); g.moveTo(x + w, yy); g.lineTo(x, yy + (anchorBottom ? -w * 0.6 : w * 0.6)); g.stroke();
+        }
+        break;
+      }
+      case 'station': {
+        const step = 26;
+        for (let k = 0, yy = posAt(13); yy > y - step && yy < y + h + step; k++, yy = posAt(13 + k * step)) {
+          g.fillStyle = 'rgba(30, 36, 44, 0.35)';
+          g.fillRect(x, yy - 1, w, 2);
+          g.fillStyle = 'rgba(40, 46, 54, 0.8)';
+          g.beginPath(); g.arc(x + 7, yy - 6, 2, 0, Math.PI * 2); g.arc(x + w - 7, yy - 6, 2, 0, Math.PI * 2); g.fill();
+          if (k % 2 === 0) {
+            g.fillStyle = '#ff5252';
+            g.beginPath(); g.arc(x + w / 2, yy + 8, 2.5, 0, Math.PI * 2); g.fill();
+            g.fillStyle = 'rgba(255, 82, 82, 0.3)';
+            g.beginPath(); g.arc(x + w / 2, yy + 8, 5.5, 0, Math.PI * 2); g.fill();
+          }
+        }
+        break;
+      }
+      case 'candypop': {
+        g.fillStyle = 'rgba(255, 45, 85, 0.85)';
+        const step = 26;
+        for (let s = -h - step; s < w + h + step; s += step) {
+          const so = anchorBottom ? (s + (y + h) % step) : (s - y % step);
+          g.beginPath();
+          g.moveTo(x + so, y);
+          g.lineTo(x + so + 12, y);
+          g.lineTo(x + so + 12 - h, y + h);
+          g.lineTo(x + so - h, y + h);
+          g.closePath();
+          g.fill();
+        }
+        break;
+      }
+      case 'dot': {
+        g.fillStyle = 'rgba(0, 40, 0, 0.3)';
+        const step = 14;
+        for (let k = 0, yy = posAt(8); yy > y - step && yy < y + h + step; k++, yy = posAt(8 + k * step)) {
+          const xoff = (k % 2 === 0) ? 0 : step / 2;
+          for (let xx = x + 8 + xoff; xx < x + w - 4; xx += step) {
+            g.beginPath(); g.arc(xx, yy, 3, 0, Math.PI * 2); g.fill();
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // Block Blast 風: 丸角 + 左ハイライト/右シェードの立体感
+  function paintPipeSegment(g, x, y, w, h, fill, stroke, deco, anchorBottom) {
+    if (h <= 0.5) return;
+    const r = Math.min(6, h / 2);
+    roundRectPath(g, x, y, w, h, r);
+    g.fillStyle = fill;
+    g.fill();
+    if (deco) {
+      g.save();
+      roundRectPath(g, x, y, w, h, r);
+      g.clip();
+      drawPipeDeco(g, x, y, w, h, deco, anchorBottom);
+      g.restore();
+    }
+    roundRectPath(g, x, y, w, h, r);
+    const grad = g.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.32)');
+    grad.addColorStop(0.22, 'rgba(255,255,255,0.10)');
+    grad.addColorStop(0.55, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.85, 'rgba(0,0,0,0.10)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.24)');
+    g.fillStyle = grad;
+    g.fill();
+    g.strokeStyle = stroke;
+    g.lineWidth = 3;
+    roundRectPath(g, x, y, w, h, r);
+    g.stroke();
+  }
+
+  function paintPipeCap(g, x, y, w, h, fill, stroke) {
+    if (h <= 0.5) return;
+    roundRectPath(g, x, y, w, h, 5);
+    g.fillStyle = fill;
+    g.fill();
+    const grad = g.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.38)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.22)');
+    g.fillStyle = grad;
+    g.fill();
+    g.strokeStyle = stroke;
+    g.lineWidth = 3;
+    roundRectPath(g, x, y, w, h, 5);
+    g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.fillRect(x + 4, y + 2.5, w - 8, 2.5);
+  }
+
+  function pipeColors(p, curSkin) {
+    if (p.isRoad) return { fill: p.roadSkin.fill, stroke: p.roadSkin.stroke, cap: p.roadSkin.cap, deco: null };
+    if (p.isShrink) return { fill: '#ef5350', stroke: '#c62828', cap: '#e57373', deco: null };
+    if (p.isAmbush) return { fill: '#ffb300', stroke: '#ff8f00', cap: '#ffca28', deco: null };
+    if (p.isSlideX) return { fill: '#ab47bc', stroke: '#7b1fa2', cap: '#ce93d8', deco: null };
+    if (p.isBlue) return { fill: '#00e5ff', stroke: '#00b8d4', cap: '#84ffff', deco: null };
+    if (p.moving) return { fill: curSkin.mFill, stroke: curSkin.mStroke, cap: curSkin.mCap, deco: curSkin.deco || null };
+    return { fill: curSkin.fill, stroke: curSkin.stroke, cap: curSkin.cap, deco: curSkin.deco || null };
+  }
+
   function drawPipes() {
     const curSkin = getCurrentPipeSkin();
     for (const p of pipes) {
       const renderX = p.x;
       let topH = p.gapY - p.gap / 2;
       let botY = p.gapY + p.gap / 2;
-      
+
       if (p.isAmbush || (p.isRoad && !p.isRoadStart)) {
         const e = ambushGrow(p);
         topH = (p.gapY - p.gap / 2) * e;
         botY = (H - GROUND_H) - ((H - GROUND_H) - (p.gapY + p.gap / 2)) * e;
       }
 
-      if (p.isRoad) {
-        ctx.fillStyle = p.roadSkin.fill;
-        ctx.strokeStyle = p.roadSkin.stroke;
-      } else if (p.isShrink) {
-        ctx.fillStyle = '#ef5350';
-        ctx.strokeStyle = '#c62828';
-      } else if (p.isAmbush) {
-        ctx.fillStyle = '#ffb300';
-        ctx.strokeStyle = '#ff8f00';
-      } else if (p.isSlideX) {
-        ctx.fillStyle = '#ab47bc';
-        ctx.strokeStyle = '#7b1fa2';
-      } else if (p.isBlue) {
-        ctx.fillStyle = '#00e5ff';
-        ctx.strokeStyle = '#00b8d4';
-      } else {
-        ctx.fillStyle = p.moving ? curSkin.mFill : curSkin.fill;
-        ctx.strokeStyle = p.moving ? curSkin.mStroke : curSkin.stroke;
-      }
-      ctx.lineWidth = 3;
-
+      const col = pipeColors(p, curSkin);
       const topHeight = Math.max(0, topH);
       const bottomHeight = Math.max(0, H - GROUND_H - botY);
-      ctx.fillRect(renderX, 0, PIPE_WIDTH, topHeight);
-      ctx.strokeRect(renderX, 0, PIPE_WIDTH, topHeight);
-      ctx.fillRect(renderX, botY, PIPE_WIDTH, bottomHeight);
-      ctx.strokeRect(renderX, botY, PIPE_WIDTH, bottomHeight);
 
-      if (p.isRoad) {
-        ctx.fillStyle = p.roadSkin.cap;
-      } else if (p.isShrink) {
-        ctx.fillStyle = '#e57373';
-      } else if (p.isAmbush) {
-        ctx.fillStyle = '#ffca28';
-      } else if (p.isSlideX) {
-        ctx.fillStyle = '#ce93d8';
-      } else if (p.isBlue) {
-        ctx.fillStyle = '#84ffff';
-      } else {
-        ctx.fillStyle = p.moving ? curSkin.mCap : curSkin.cap;
-      }
+      paintPipeSegment(ctx, renderX, 0, PIPE_WIDTH, topHeight, col.fill, col.stroke, col.deco, true);
+      paintPipeSegment(ctx, renderX, botY, PIPE_WIDTH, bottomHeight, col.fill, col.stroke, col.deco, false);
 
-      if (topHeight > 0.5) {
-        ctx.fillRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
-        ctx.strokeRect(renderX - 4, topH - 20, PIPE_WIDTH + 8, 20);
-      }
-      if (bottomHeight > 0.5) {
-        ctx.fillRect(renderX - 4, botY, PIPE_WIDTH + 8, 20);
-        ctx.strokeRect(renderX - 4, botY, PIPE_WIDTH + 8, 20);
+      if (topHeight > 0.5) paintPipeCap(ctx, renderX - 4, topH - 20, PIPE_WIDTH + 8, 20, col.cap, col.stroke);
+      if (bottomHeight > 0.5) paintPipeCap(ctx, renderX - 4, botY, PIPE_WIDTH + 8, 20, col.cap, col.stroke);
+
+      // 通過した瞬間の一瞬光るフラッシュ (Block Blast 風・約0.22秒)
+      if (p.flash > 0) {
+        const a = p.flash / 0.22;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = a * 0.55;
+        ctx.fillStyle = '#ffffff';
+        if (topHeight > 0.5) { roundRectPath(ctx, renderX - 4, 0, PIPE_WIDTH + 8, topHeight, 6); ctx.fill(); }
+        if (bottomHeight > 0.5) { roundRectPath(ctx, renderX - 4, botY, PIPE_WIDTH + 8, bottomHeight, 6); ctx.fill(); }
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
       }
     }
   }
@@ -1600,6 +1804,9 @@
       if (p.shape === 'star') {
         ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
         drawStarPath(0, 0, p.size, p.size / 2.2); ctx.fill(); ctx.restore();
+      } else if (p.shape === 'spark') {
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        drawStarPath(0, 0, p.size * 1.4, p.size / 3.2, 4); ctx.fill(); ctx.restore();
       } else {
         ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
       }
@@ -1646,7 +1853,15 @@
     for (const f of floaters) {
       const a = Math.max(0, f.life / f.maxLife);
       const growth = 1 + (1 - a) * 0.15;
-      ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth)}px sans-serif`;
+      // 出現直後は小→ふわっと弾んで実寸に (バウンス・イージング)
+      const age = f.maxLife - f.life;
+      let pop = 1;
+      if (age < 0.18) {
+        const t = age / 0.18;
+        const c1 = 1.70158, c3 = c1 + 1;
+        pop = Math.max(0.2, 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2));
+      }
+      ctx.font = `bold ${Math.round(22 * (f.scale || 1) * growth * pop)}px sans-serif`;
       ctx.globalAlpha = a;
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
