@@ -151,6 +151,30 @@ canvas {
   100% { transform: scale(1) rotate(0deg); color: #fff; text-shadow: 0 2px 0 #00000055; }
 }
 
+#home-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 15;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+#home-btn:active {
+  transform: scale(0.94);
+}
+
+#home-btn.hidden {
+  display: none;
+}
+
 #version {
   position: absolute;
   right: 8px;

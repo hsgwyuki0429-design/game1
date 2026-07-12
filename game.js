@@ -28,6 +28,7 @@
   const pipeGrid = document.getElementById('pipe-grid');
 
   const autoBtn = document.getElementById('auto-btn');
+  const homeBtn = document.getElementById('home-btn');
   let isAutoPilot = false;
   function updateAutoBtn() {
     autoBtn.textContent = isAutoPilot ? '🤖 自動操作: ON' : '🤖 自動操作: OFF';
@@ -38,6 +39,7 @@
     e.preventDefault();
     isAutoPilot = !isAutoPilot;
     updateAutoBtn();
+    updateHomeBtn();
   });
   updateAutoBtn();
 
@@ -527,12 +529,12 @@
   const ROAD_COOLDOWN_MIN = 15;
   const ROAD_COOLDOWN_MAX = 24;
   const AMBUSH_GROW_START_X = W * 0.95;
-  const AMBUSH_GROW_END_X = W * 0.42;
+  const AMBUSH_GROW_END_X = W * 0.55;
 
   function ambushGrow(p) {
     if (isReverse) {
       const startX = W * 0.05;
-      const endX = W * 0.58;
+      const endX = W * 0.45;
       const t = (p.x - startX) / (endX - startX);
       const c = Math.max(0, Math.min(1, t));
       return c * c;
@@ -893,10 +895,37 @@
     state = 'playing';
     overlay.classList.add('hidden');
     bird.vy = cfg.flap;
+    updateHomeBtn();
   }
+
+  // 自動操作モード中のみ画面右上に表示する「ホームに戻る」ボタン
+  function updateHomeBtn() {
+    homeBtn.classList.toggle('hidden', !(isAutoPilot && state === 'playing'));
+  }
+
+  function goHome() {
+    // 自動操作をONのままにすると自動リスタートで即ゲームが再開してしまうためOFFに戻す
+    isAutoPilot = false;
+    updateAutoBtn();
+    state = 'ready';
+    reset();
+    closePanels();
+    overlayTitle.textContent = 'Flappy Byte';
+    overlaySub.textContent = 'タップ / クリック / スペースキーで羽ばたく';
+    overlay.classList.remove('hidden');
+    updateHomeBtn();
+  }
+
+  homeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    goHome();
+  });
+  homeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
 
   function endGame() {
     state = 'gameover';
+    updateHomeBtn();
     triggerFlash('255,255,255', 0.15);
     triggerShake(8, 0.25);
     triggerPunch(0.12);
