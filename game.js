@@ -623,6 +623,56 @@
   let masterGain = null;
   let masterFilter = null;
   let reverbGain = null;
+  let silentKeepAlive = null;
+  let mediaSink = null;
+
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  // --- スマホの画面録画中でも効果音を鳴らす / 録音させる ---
+  // iOS Safari は Web Audio を既定で「アンビエント」チャンネルへ出力するため、
+  // 消音スイッチで消えるうえ画面録画にも含まれないことがある。
+  // 無音の <audio> 要素を再生し続けるとページの音声セッションが「再生」に昇格し、
+  // Web Audio の効果音も鳴り・録画に含まれるようになる。
+  function buildSilentWavUrl(seconds = 1) {
+    const rate = 8000;
+    const samples = rate * seconds;
+    const dataSize = samples * 2; // 16bit mono
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);   // PCM
+    view.setUint16(22, 1, true);   // mono
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    // データ部はゼロ埋めのまま = 無音
+    return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  }
+
+  function ensureSilentKeepAlive() {
+    try {
+      if (!silentKeepAlive) {
+        silentKeepAlive = new Audio(buildSilentWavUrl(1));
+        silentKeepAlive.loop = true;
+        silentKeepAlive.volume = 0;       // 耳には聞こえないが、音声セッションは再生モードに保たれる
+        silentKeepAlive.muted = false;    // muted にすると iOS がセッションを切り替えないので false のまま
+        silentKeepAlive.setAttribute('playsinline', '');
+      }
+      if (silentKeepAlive.paused) {
+        const p = silentKeepAlive.play();
+        if (p && p.catch) p.catch(() => {});
+      }
+    } catch (e) { }
+  }
 
   function buildReverbImpulse(ctxA, seconds = 1.6, decay = 3.2) {
     const rate = ctxA.sampleRate;
@@ -640,23 +690,43 @@
       const AudioCtor = window.AudioContext || window.webkitAudioContext;
       audioCtx = AudioCtor ? new AudioCtor() : null;
       if (audioCtx) {
+        // 効果音の出力先。iOS では <audio> 要素（メディアチャンネル）経由にして、
+        // 画面録画に確実に音が載り、消音スイッチの影響も受けないようにする。
+        let output = audioCtx.destination;
+        if (isIOS && audioCtx.createMediaStreamDestination) {
+          try {
+            const streamDest = audioCtx.createMediaStreamDestination();
+            mediaSink = new Audio();
+            mediaSink.srcObject = streamDest.stream;
+            mediaSink.setAttribute('playsinline', '');
+            mediaSink.autoplay = true;
+            const pl = mediaSink.play();
+            if (pl && pl.catch) pl.catch(() => {
+              // メディア要素の再生に失敗したら通常出力へフォールバック（無音回避）。
+              try { masterGain && masterGain.connect(audioCtx.destination); } catch (e) { }
+            });
+            output = streamDest;
+          } catch (e) { output = audioCtx.destination; }
+        }
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
         masterFilter.frequency.value = 3800;
         masterFilter.Q.value = 0.4;
         masterGain = audioCtx.createGain();
         masterGain.gain.value = 0.85;
-        masterFilter.connect(masterGain).connect(audioCtx.destination);
+        masterFilter.connect(masterGain).connect(output);
         try {
           const convolver = audioCtx.createConvolver();
           convolver.buffer = buildReverbImpulse(audioCtx);
           reverbGain = audioCtx.createGain();
           reverbGain.gain.value = 0.18;
-          masterGain.connect(convolver).connect(reverbGain).connect(audioCtx.destination);
+          masterGain.connect(convolver).connect(reverbGain).connect(output);
         } catch (e) { }
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (mediaSink && mediaSink.paused) { const p = mediaSink.play(); if (p && p.catch) p.catch(() => {}); }
+    ensureSilentKeepAlive();
     return audioCtx;
   }
 
@@ -1998,5 +2068,24 @@
   startBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     flap();
+  });
+
+  // 最初のユーザー操作で音声セッションを起こしておく（画面録画対策）。
+  // ボタンをタップしただけの場合でも効果音チャンネルを再生モードに保つ。
+  function primeAudioOnGesture() {
+    getAudioCtx();
+    ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) =>
+      document.removeEventListener(ev, primeAudioOnGesture, true));
+  }
+  ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) =>
+    document.addEventListener(ev, primeAudioOnGesture, { capture: true, passive: true }));
+
+  // タブ復帰時に音声セッションを再開する。
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (mediaSink && mediaSink.paused) { const p = mediaSink.play(); if (p && p.catch) p.catch(() => {}); }
+      ensureSilentKeepAlive();
+    }
   });
 })();
