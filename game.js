@@ -623,6 +623,52 @@
   let masterGain = null;
   let masterFilter = null;
   let reverbGain = null;
+  let silentKeepAlive = null;
+
+  // --- スマホの画面録画中でも効果音を鳴らす / 録音させる ---
+  // iOS Safari は Web Audio を既定で「アンビエント」チャンネルへ出力するため、
+  // 消音スイッチで消えるうえ画面録画にも含まれないことがある。
+  // 無音の <audio> 要素を再生し続けるとページの音声セッションが「再生」に昇格し、
+  // Web Audio の効果音も鳴り・録画に含まれるようになる。
+  function buildSilentWavUrl(seconds = 1) {
+    const rate = 8000;
+    const samples = rate * seconds;
+    const dataSize = samples * 2; // 16bit mono
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);   // PCM
+    view.setUint16(22, 1, true);   // mono
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    // データ部はゼロ埋めのまま = 無音
+    return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  }
+
+  function ensureSilentKeepAlive() {
+    try {
+      if (!silentKeepAlive) {
+        silentKeepAlive = new Audio(buildSilentWavUrl(1));
+        silentKeepAlive.loop = true;
+        silentKeepAlive.volume = 0;       // 耳には聞こえないが、音声セッションは再生モードに保たれる
+        silentKeepAlive.muted = false;    // muted にすると iOS がセッションを切り替えないので false のまま
+        silentKeepAlive.setAttribute('playsinline', '');
+      }
+      if (silentKeepAlive.paused) {
+        const p = silentKeepAlive.play();
+        if (p && p.catch) p.catch(() => {});
+      }
+    } catch (e) { }
+  }
 
   function buildReverbImpulse(ctxA, seconds = 1.6, decay = 3.2) {
     const rate = ctxA.sampleRate;
@@ -657,6 +703,7 @@
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    ensureSilentKeepAlive();
     return audioCtx;
   }
 
@@ -1998,5 +2045,23 @@
   startBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     flap();
+  });
+
+  // 最初のユーザー操作で音声セッションを起こしておく（画面録画対策）。
+  // ボタンをタップしただけの場合でも効果音チャンネルを再生モードに保つ。
+  function primeAudioOnGesture() {
+    getAudioCtx();
+    ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) =>
+      document.removeEventListener(ev, primeAudioOnGesture, true));
+  }
+  ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) =>
+    document.addEventListener(ev, primeAudioOnGesture, { capture: true, passive: true }));
+
+  // タブ復帰時に音声セッションを再開する。
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      ensureSilentKeepAlive();
+    }
   });
 })();
