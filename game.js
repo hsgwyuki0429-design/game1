@@ -624,6 +624,10 @@
   let masterFilter = null;
   let reverbGain = null;
   let silentKeepAlive = null;
+  let mediaSink = null;
+
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   // --- スマホの画面録画中でも効果音を鳴らす / 録音させる ---
   // iOS Safari は Web Audio を既定で「アンビエント」チャンネルへ出力するため、
@@ -686,23 +690,42 @@
       const AudioCtor = window.AudioContext || window.webkitAudioContext;
       audioCtx = AudioCtor ? new AudioCtor() : null;
       if (audioCtx) {
+        // 効果音の出力先。iOS では <audio> 要素（メディアチャンネル）経由にして、
+        // 画面録画に確実に音が載り、消音スイッチの影響も受けないようにする。
+        let output = audioCtx.destination;
+        if (isIOS && audioCtx.createMediaStreamDestination) {
+          try {
+            const streamDest = audioCtx.createMediaStreamDestination();
+            mediaSink = new Audio();
+            mediaSink.srcObject = streamDest.stream;
+            mediaSink.setAttribute('playsinline', '');
+            mediaSink.autoplay = true;
+            const pl = mediaSink.play();
+            if (pl && pl.catch) pl.catch(() => {
+              // メディア要素の再生に失敗したら通常出力へフォールバック（無音回避）。
+              try { masterGain && masterGain.connect(audioCtx.destination); } catch (e) { }
+            });
+            output = streamDest;
+          } catch (e) { output = audioCtx.destination; }
+        }
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
         masterFilter.frequency.value = 3800;
         masterFilter.Q.value = 0.4;
         masterGain = audioCtx.createGain();
         masterGain.gain.value = 0.85;
-        masterFilter.connect(masterGain).connect(audioCtx.destination);
+        masterFilter.connect(masterGain).connect(output);
         try {
           const convolver = audioCtx.createConvolver();
           convolver.buffer = buildReverbImpulse(audioCtx);
           reverbGain = audioCtx.createGain();
           reverbGain.gain.value = 0.18;
-          masterGain.connect(convolver).connect(reverbGain).connect(audioCtx.destination);
+          masterGain.connect(convolver).connect(reverbGain).connect(output);
         } catch (e) { }
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (mediaSink && mediaSink.paused) { const p = mediaSink.play(); if (p && p.catch) p.catch(() => {}); }
     ensureSilentKeepAlive();
     return audioCtx;
   }
@@ -2061,6 +2084,7 @@
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && audioCtx) {
       if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (mediaSink && mediaSink.paused) { const p = mediaSink.play(); if (p && p.catch) p.catch(() => {}); }
       ensureSilentKeepAlive();
     }
   });
